@@ -58,7 +58,6 @@ type UserInfo struct {
 	StudentNo      string `json:"studentNo"`
 }
 
-// TodayCourseParams 表示获取今日课程接口的输入
 type TodayCourseParams struct {
 	ID        string `json:"id"`
 	DateStr   string `json:"dateStr"`

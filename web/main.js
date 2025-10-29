@@ -1,68 +1,121 @@
-function getCookie(e) {
-    const t = document.cookie.match(new RegExp("(^| )" + e + "=([^;]+)"));
-    return t ? t[2] : null
-}
-function deleteAllCookies() {
-    const e = document.cookie.split(";");
-    for (const t of e) {
-        const e = t.indexOf("=")
-          , n = e > -1 ? t.substr(0, e).trim() : t.trim();
-        document.cookie = n + "=; Max-Age=-99999999; path=/"
-    }
-}
+// ========================================
+// Helper Functions
+// ========================================
 function showLoginForm() {
-    document.getElementById("loginForm").style.display = "block",
-    document.getElementById("courseContainer").style.display = "none"
+    document.getElementById("loginForm").style.display = "block";
+    document.getElementById("courseContainer").style.display = "none";
 }
+
 function showCourseContainer() {
-    document.getElementById("loginForm").style.display = "none",
-    document.getElementById("courseContainer").style.display = "block"
+    document.getElementById("loginForm").style.display = "none";
+    document.getElementById("courseContainer").style.display = "block";
 }
+
+function formatTime(timeStr) {
+    return timeStr;
+}
+
+function todayStr() {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${y}${m}${dd}`;
+}
+
+// ========================================
+// Login & Logout
+// ========================================
 async function login() {
-    const e = document.getElementById("student_id").value
-      , t = document.getElementById("password").value
-      , n = document.getElementById("loginMessage")
-      , o = document.getElementById("loginButton");
-    if (!e || !e.trim())
-        return void (n.textContent = "请输入学号");
-    if (!t || !t.trim())
-        return void (n.textContent = "请输入密码");
-    n.textContent = "",
-    o.disabled = !0,
-    o.classList.add("button-loading");
-    // 这里前端登录仅作为导航使用，真实登录已由后端 "/login" 提供
+    const phone = document.getElementById("student_id").value.trim();
+    const password = document.getElementById("password").value.trim();
+    const msg = document.getElementById("loginMessage");
+    const btn = document.getElementById("loginButton");
+
+    if (!phone) {
+        msg.textContent = "请输入学号";
+        return;
+    }
+    if (!password) {
+        msg.textContent = "请输入密码";
+        return;
+    }
+
+    msg.textContent = "";
+    btn.disabled = true;
+    btn.classList.add("button-loading");
+
     try {
-        // 直接进入课程容器，并加载当天课程（使用学号作为 userId）
+        const res = await fetch('/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                phone,
+                password,
+                userLevel: '1',
+                verificationType: '1',
+                verificationUrl: ''
+            })
+        });
+
+        if (!res.ok) {
+            const errText = await res.text();
+            throw new Error('Login failed: ' + errText);
+        }
+
+        const data = await res.json();
+        // Login successful, show course container
         showCourseContainer();
         await fetchCourses();
-    } catch (e) {
-        n.textContent = "网络错误，请重试",
-        n.style.color = "red",
-        console.error("Error:", e)
+    } catch (err) {
+        msg.textContent = '登录失败或网络异常';
+        msg.style.color = 'red';
+        console.error(err);
+    } finally {
+        btn.disabled = false;
+        btn.classList.remove('button-loading');
     }
-    o.disabled = !1,
-    o.classList.remove("button-loading")
-}
-function logout() {
-    deleteAllCookies(),
-    document.getElementById("courseMessage").textContent = "",
-    document.getElementById("courseList").innerHTML = "",
-    showLoginForm()
-}
-window.onload = function() {
-    getCookie("user_id") ? (showCourseContainer(),
-    fetchCourses()) : showLoginForm()
 }
 
+async function logout() {
+    try {
+        await fetch('/logout', { method: 'POST' });
+    } catch (e) {
+        console.error('Logout error:', e);
+    }
+    document.getElementById("courseMessage").textContent = "";
+    document.getElementById("courseList").innerHTML = "";
+    showLoginForm();
+}
+
+// ========================================
+// Page Load: Check Session
+// ========================================
+window.onload = async function() {
+    try {
+        const res = await fetch('/me', { method: 'GET' });
+        if (res.ok) {
+            const data = await res.json();
+            showCourseContainer();
+            await fetchCourses();
+            return;
+        }
+    } catch (e) {
+        console.error('Session check error:', e);
+    }
+    showLoginForm();
+}
+
+// ========================================
+// Fetch Courses
+// ========================================
 let lastFetchTime = 0;
 const FETCH_COOLDOWN = 1000;
-function formatTime(e){ return e }
-function todayStr(){ const d=new Date();const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');const dd=String(d.getDate()).padStart(2,'0');return `${y}${m}${dd}`; }
 
 async function fetchCourses() {
-    const e = Date.now();
-    if (e - lastFetchTime < FETCH_COOLDOWN) return;
-    lastFetchTime = e;
+    const now = Date.now();
+    if (now - lastFetchTime < FETCH_COOLDOWN) return;
+    lastFetchTime = now;
 
     const msg = document.getElementById('courseMessage');
     const list = document.getElementById('courseList');
@@ -70,193 +123,244 @@ async function fetchCourses() {
     msg.textContent = '正在加载课程...';
     msg.style.color = '#666';
 
-    const userId = document.getElementById('student_id').value.trim();
     const dateStr = todayStr();
 
-    try{
-      const res = await fetch('/getTodayCourse', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: userId, dateStr })
-      });
-      const data = await res.json();
-      renderCourses(data.result||[]);
-      msg.textContent = '';
-    }catch(err){
-      try{
-        const local = await fetch(`/data/courses_${dateStr}.json`);
-        const data = await local.json();
-        renderCourses(data.result||[]);
-        msg.textContent = '已从本地数据加载';
-        msg.style.color = '#666';
-      }catch(e2){
-        msg.textContent = '拉取失败';
-        msg.style.color = 'red';
-      }
+    try {
+        const res = await fetch('/courses/today', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dateStr })
+        });
+
+        if (!res.ok) throw new Error('Failed to fetch courses');
+
+        const data = await res.json();
+        renderCourses(data.result || data.Result || []);
+        msg.textContent = '';
+    } catch (err) {
+        // Fallback to local data
+        try {
+            const local = await fetch(`/data/courses_${dateStr}.json`);
+            const data = await local.json();
+            renderCourses(data.result || data.Result || []);
+            msg.textContent = '已从本地数据加载';
+            msg.style.color = '#666';
+        } catch (e2) {
+            msg.textContent = '拉取失败';
+            msg.style.color = 'red';
+        }
     }
 }
 
-function renderCourses(arr){
-  const list = document.getElementById('courseList');
-  list.innerHTML = '';
-  arr.forEach(e=>{
-    const card = createCourseCard(e);
-    list.appendChild(card);
-  });
+function renderCourses(arr) {
+    const list = document.getElementById('courseList');
+    list.innerHTML = '';
+    arr.forEach(course => {
+        const card = createCourseCard(course);
+        list.appendChild(card);
+    });
 }
 
-function createCourseCard(e) {
-    const t = document.createElement("div");
-    t.className = "course-card";
-    const n = Date.now()
-      , o = new Date(e.classBeginTime).getTime()
-      , r = new Date(e.classEndTime).getTime();
-    let s = "sign-button"
-      , i = "签到"
-      , a = !1
-      , c = !1;
-    "1" === e.signStatus ? (s += " signed",
-    i = "已签到",
-    a = !0,
-    n >= o - 18e5 && n <= r && (c = !0)) : n < o - 18e5 ? (s += " signed",
-    i = "课程未开始",
-    a = !0) : n > r ? (s += " signed",
-    i = "课程已结束",
-    a = !0) : c = !0;
-    const d = c ? `
-        <button 
-            onclick="showQRCode('${e.uuid}', '${e.courseName}')"
+function createCourseCard(course) {
+    const card = document.createElement("div");
+    card.className = "course-card";
+
+    const now = Date.now();
+    const begin = new Date(course.classBeginTime).getTime();
+    const end = new Date(course.classEndTime).getTime();
+
+    let btnClass = "sign-button";
+    let btnText = "签到";
+    let disabled = false;
+    let canShowQR = false;
+
+    if (String(course.signStatus) === "1") {
+        // Already signed
+        btnClass += " signed";
+        btnText = "已签到";
+        disabled = true;
+        canShowQR = now >= begin - 30*60*1000 && now <= end;
+    } else if (now < begin - 30*60*1000) {
+        // Too early
+        btnClass += " signed";
+        btnText = "课程未开始";
+        disabled = true;
+    } else if (now > end) {
+        // Too late
+        btnClass += " signed";
+        btnText = "课程已结束";
+        disabled = true;
+    } else {
+        canShowQR = true;
+    }
+
+    const qrButton = canShowQR ? `
+        <button
+            onclick="showQRCode('${course.uuid}', '${course.courseName}')"
             class="qrcode-button"
             title="显示签到二维码"
             aria-label="显示签到二维码"
-        >
-        </button>
+        ></button>
     ` : "";
-    t.innerHTML = `
+
+    card.innerHTML = `
         <div class="course-header">
             <div class="course-info">
-                <div class="course-name">${e.courseName}</div>
+                <div class="course-name">${course.courseName}</div>
                 <div class="course-details">
-                    <div>教师: ${e.teacherName}</div>
-                    <div>地点: ${e.classroomName}</div>
-                    <div>时间: ${formatTime(e.classBeginTime)} - ${formatTime(e.classEndTime)}</div>
+                    <div>教师: ${course.teacherName}</div>
+                    <div>地点: ${course.classroomName}</div>
+                    <div>时间: ${formatTime(course.classBeginTime)} - ${formatTime(course.classEndTime)}</div>
                 </div>
             </div>
             <div class="course-buttons">
-                ${d}
-                <button 
-                    onclick="signCourse('${e.uuid}')"
-                    class="${s}"
-                    id="sign-btn-${e.uuid}"
-                    ${a ? "disabled" : ""}
+                ${qrButton}
+                <button
+                    onclick="signCourse('${course.uuid}')"
+                    class="${btnClass}"
+                    id="sign-btn-${course.uuid}"
+                    ${disabled ? "disabled" : ""}
                 >
-                    ${i}
+                    ${btnText}
                 </button>
             </div>
         </div>
     `;
-    return t
+
+    return card;
 }
 
-let qrCodeInstance = null
-  , qrRefreshTimer = null
-  , qrUpdateTimer = null
-  , currentCourseUuid = null
-  , currentCourseName = null;
+// ========================================
+// Sign Course
+// ========================================
+async function signCourse(uuid) {
+    const msg = document.getElementById("courseMessage");
+    const btn = document.getElementById(`sign-btn-${uuid}`);
 
-function showQRCode(e, t) {
-    currentCourseUuid = e,
-    currentCourseName = t,
-    document.getElementById("qrcodeOverlay").classList.add("active"),
-    document.getElementById("qrcodeContainer").classList.add("active"),
-    document.getElementById("qrcodeTitle").textContent = `${t} - 签到二维码`,
-    generateQRCode(),
-    startQRCodeRefresh()
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add("button-loading");
+    }
+
+    try {
+        const res = await fetch('/sign', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ timeTableId: uuid })
+        });
+
+        if (!res.ok) throw new Error('Sign failed');
+
+        await fetchCourses();
+    } catch (err) {
+        if (btn) {
+            btn.disabled = false;
+            btn.classList.remove("button-loading");
+        }
+        msg.textContent = '网络错误，请重试';
+        msg.style.color = 'red';
+        setTimeout(() => { msg.textContent = ''; }, 3000);
+        console.error(err);
+    }
+}
+
+// ========================================
+// QR Code Functions
+// ========================================
+let qrCodeInstance = null;
+let qrRefreshTimer = null;
+let qrUpdateTimer = null;
+let currentCourseUuid = null;
+let currentCourseName = null;
+
+function showQRCode(uuid, courseName) {
+    currentCourseUuid = uuid;
+    currentCourseName = courseName;
+    document.getElementById("qrcodeOverlay").classList.add("active");
+    document.getElementById("qrcodeContainer").classList.add("active");
+    document.getElementById("qrcodeTitle").textContent = `${courseName} - 签到二维码`;
+    generateQRCode();
+    startQRCodeRefresh();
 }
 
 function closeQRCode() {
-    document.getElementById("qrcodeOverlay").classList.remove("active"),
-    document.getElementById("qrcodeContainer").classList.remove("active"),
-    qrRefreshTimer && (clearTimeout(qrRefreshTimer),
-    qrRefreshTimer = null),
-    qrUpdateTimer && (clearInterval(qrUpdateTimer),
-    qrUpdateTimer = null),
-    document.getElementById("qrcodeCanvas").innerHTML = "",
-    qrCodeInstance = null,
-    currentCourseUuid = null,
-    currentCourseName = null
+    document.getElementById("qrcodeOverlay").classList.remove("active");
+    document.getElementById("qrcodeContainer").classList.remove("active");
+
+    if (qrRefreshTimer) {
+        clearTimeout(qrRefreshTimer);
+        qrRefreshTimer = null;
+    }
+    if (qrUpdateTimer) {
+        clearInterval(qrUpdateTimer);
+        qrUpdateTimer = null;
+    }
+
+    document.getElementById("qrcodeCanvas").innerHTML = "";
+    qrCodeInstance = null;
+    currentCourseUuid = null;
+    currentCourseName = null;
 }
 
 function generateQRCode() {
-    const e = Date.now() - Math.floor(1700 * Math.random() + 300)
-      , t = `http://124.16.75.106:8081/app/course/stu_scan_sign.action?${new URLSearchParams({
+    const timestamp = Date.now() - Math.floor(1700 * Math.random() + 300);
+    const qrUrl = `http://124.16.75.106:8081/app/course/stu_scan_sign.action?${new URLSearchParams({
         timeTableId: currentCourseUuid,
-        timestamp: e
-    }).toString()}`
-      , n = document.getElementById("qrcodeCanvas");
-    n.innerHTML = "",
-    qrCodeInstance = new QRCode(n,{
-        text: t,
+        timestamp: timestamp
+    }).toString()}`;
+
+    const canvas = document.getElementById("qrcodeCanvas");
+    canvas.innerHTML = "";
+    qrCodeInstance = new QRCode(canvas, {
+        text: qrUrl,
         width: 256,
         height: 256,
         colorDark: "#000000",
         colorLight: "#ffffff",
         correctLevel: QRCode.CorrectLevel.H
-    })
+    });
 }
 
 function manualRefreshQRCode() {
-    event.stopPropagation(),
-    qrRefreshTimer && (clearTimeout(qrRefreshTimer),
-    qrRefreshTimer = null),
-    qrUpdateTimer && (clearInterval(qrUpdateTimer),
-    qrUpdateTimer = null),
-    generateQRCode(),
-    startQRCodeRefresh()
+    event.stopPropagation();
+
+    if (qrRefreshTimer) {
+        clearTimeout(qrRefreshTimer);
+        qrRefreshTimer = null;
+    }
+    if (qrUpdateTimer) {
+        clearInterval(qrUpdateTimer);
+        qrUpdateTimer = null;
+    }
+
+    generateQRCode();
+    startQRCodeRefresh();
 }
 
 function startQRCodeRefresh() {
-    const e = new Date(Date.now() + 18e4);
-    updateRefreshTimeDisplay(e),
-    qrUpdateTimer = setInterval( () => {
-        updateRefreshTimeDisplay(e)
-    }
-    , 1e3),
-    qrRefreshTimer = setTimeout( () => {
-        generateQRCode(),
-        startQRCodeRefresh()
-    }
-    , 18e4)
+    const refreshTime = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes
+    updateRefreshTimeDisplay(refreshTime);
+
+    qrUpdateTimer = setInterval(() => {
+        updateRefreshTimeDisplay(refreshTime);
+    }, 1000);
+
+    qrRefreshTimer = setTimeout(() => {
+        generateQRCode();
+        startQRCodeRefresh();
+    }, 3 * 60 * 1000);
 }
 
-function updateRefreshTimeDisplay(e) {
-    const t = e - Date.now();
-    if (t <= 0)
-        return void (document.getElementById("qrcodeRefreshInfo").textContent = "正在刷新...");
-    const n = Math.floor(t / 6e4)
-      , o = Math.floor(t % 6e4 / 1e3)
-      , r = `${String(n).padStart(2, "0")}:${String(o).padStart(2, "0")}`;
-    document.getElementById("qrcodeRefreshInfo").textContent = `下次刷新时间: ${r}`
-}
+function updateRefreshTimeDisplay(refreshTime) {
+    const remaining = refreshTime - Date.now();
 
-async function signCourse(e) {
-    const t = document.getElementById("userId").value.trim()
-      , n = document.getElementById("courseMessage")
-      , o = document.getElementById(`sign-btn-${e}`);
-    o && (o.disabled = !0,
-    o.classList.add("button-loading"));
-    const r = `https://iclass.ucas.edu.cn:8181/app/course/stu_scan_sign.action?timeTableId=${e}&timestamp=${Date.now() - Math.floor(1700 * Math.random() + 300)}&id=${t}`;
-    try {
-        await fetch(r, { method: "GET", mode: "no-cors", referrerPolicy: "no-referrer", headers: { "Content-Type": "application/x-www-form-urlencoded" } })
-        await fetchCourses()
-    } catch (e) {
-        o && (o.disabled = !1,
-        o.classList.remove("button-loading")),
-        n.textContent = "网络错误，请重试",
-        n.style.color = "red",
-        setTimeout( () => { n.textContent = "" }, 3e3),
-        console.error("Error:", e)
+    if (remaining <= 0) {
+        document.getElementById("qrcodeRefreshInfo").textContent = "正在刷新...";
+        return;
     }
+
+    const minutes = Math.floor(remaining / 60000);
+    const seconds = Math.floor((remaining % 60000) / 1000);
+    const timeStr = `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+    document.getElementById("qrcodeRefreshInfo").textContent = `下次刷新时间: ${timeStr}`;
 }
-
-

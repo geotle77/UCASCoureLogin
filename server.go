@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"log"
@@ -9,15 +11,104 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"time"
+	"fmt"
 
 	"LoginTest/auth"
 	"LoginTest/models"
 )
 
+// ------------------------------
+// In-memory session store
+// ------------------------------
+// Session keeps minimal state for a logged-in user.
+// We store:
+// - UID: user id returned from upstream (used for course/sign APIs)
+// - UpstreamSessionID: session token required by upstream in header "sessionId"
+// - User: full user info to return from /me
+// - ExpiresAt: simple TTL expiration to avoid unbounded growth
+// NOTE: This is a simple in-memory store suitable for demo/dev.
+// In production, use a persistent store (Redis) and secure cookies.
+
+type Session struct {
+	UID               string
+	UpstreamSessionID string
+	User              auth.UserInfo
+	ExpiresAt         time.Time
+}
+
+var (
+	sessions   = map[string]*Session{}
+	sessionsMu sync.RWMutex
+)
+
+const (
+	// Fallback hardcoded session id (legacy behavior). Will be used only if upstream did not return one.
+	legacySessionID = "220B4BF64B92633F236393F811A8586A"
+	// Cookie name for our session id
+	cookieName = "sid"
+	// Session TTL
+	sessionTTL = 24 * time.Hour
+)
+
+// genToken generates a cryptographically-secure random session token.
+func genToken() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// setSessionCookie writes the sid cookie to client.
+func setSessionCookie(w http.ResponseWriter, sid string) {
+	cookie := &http.Cookie{
+		Name:     cookieName,
+		Value:    sid,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Expires:  time.Now().Add(sessionTTL),
+	}
+	http.SetCookie(w, cookie)
+}
+
+// getSession returns active session from request cookie.
+func getSession(r *http.Request) (*Session, bool) {
+	c, err := r.Cookie(cookieName)
+	if err != nil || c.Value == "" {
+		return nil, false
+	}
+	sessionsMu.RLock()
+	sess, ok := sessions[c.Value]
+	if ok && time.Now().Before(sess.ExpiresAt) {
+		sessionsMu.RUnlock()
+		return sess, true
+	}
+	sessionsMu.RUnlock()
+	return nil, false
+}
+
+// touchSession extends session expiration.
+func touchSession(sid string) {
+	sessionsMu.Lock()
+	if sess, ok := sessions[sid]; ok {
+		sess.ExpiresAt = time.Now().Add(sessionTTL)
+	}
+	sessionsMu.Unlock()
+}
+
 func main() {
 	http.HandleFunc("/login", handleLogin)
+	http.HandleFunc("/me", handleMe)
+	http.HandleFunc("/courses/today", handleCoursesToday)
+	http.HandleFunc("/sign", handleSign)
+
+	// Backward-compatible legacy endpoint
 	http.HandleFunc("/getTodayCourse", handleGetTodayCourse)
+	http.HandleFunc("/logout", handleLogout)
 
 	// 提供静态文件：/web 与 /data
 	http.Handle("/web/", http.StripPrefix("/web/", http.FileServer(http.Dir("web"))))
@@ -34,6 +125,9 @@ func main() {
 	log.Fatal(http.ListenAndServe(addr, nil))
 }
 
+// handleLogin proxies login to upstream, creates a local session, and returns basic user info.
+// Request: JSON { phone, password, userLevel, verificationType, verificationUrl }
+// Response: 200 JSON { user: auth.UserInfo }
 func handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -64,8 +158,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	// 按示例设置请求头
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	// 固定 sessionId
-	req.Header.Set("sessionId", "220B4BF64B92633F236393F811A8586A")
+	// 注意：此处不要使用固定 sessionId，登录接口通常会返回专属会话信息。
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari MicroMessenger")
 	req.Header.Set("Accept", "*/*")
 	req.Header.Set("Connection", "keep-alive")
@@ -78,19 +171,226 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	// 透传状态码与响应体
-	for k, vs := range resp.Header {
-		for _, v := range vs {
-			w.Header().Add(k, v)
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		http.Error(w, "read upstream failed", http.StatusBadGateway)
+		return
+	}
+
+	// 解析上游响应
+	var loginResp auth.LoginResponse
+	if err := json.Unmarshal(bodyBytes, &loginResp); err != nil {
+		// 登录响应不是预期结构，透传原始响应
+		for k, vs := range resp.Header {
+			for _, v := range vs {
+				w.Header().Add(k, v)
+			}
 		}
+		w.WriteHeader(resp.StatusCode)
+		_, _ = w.Write(bodyBytes)
+		return
 	}
-	w.WriteHeader(resp.StatusCode)
-	if _, err := io.Copy(w, resp.Body); err != nil {
-		log.Printf("write response error: %v", err)
+
+	// 从响应中提取用户与上游会话ID
+	uid := strings.TrimSpace(loginResp.Result.ID)
+	upSess := strings.TrimSpace(loginResp.Result.SessionID)
+	if uid == "" {
+		http.Error(w, "login failed: empty user id", http.StatusBadGateway)
+		return
 	}
+	if upSess == "" {
+		// 某些环境可能不回传 sessionId，则回退到 legacy（不推荐，仅为兼容）
+		upSess = legacySessionID
+	}
+
+	// 创建本地会话
+	sid, err := genToken()
+	if err != nil {
+		http.Error(w, "create session failed", http.StatusInternalServerError)
+		return
+	}
+	sessionsMu.Lock()
+	sessions[sid] = &Session{
+		UID:               uid,
+		UpstreamSessionID: upSess,
+		User:              loginResp.Result,
+		ExpiresAt:         time.Now().Add(sessionTTL),
+	}
+	sessionsMu.Unlock()
+
+	// 设置 Cookie 并返回用户信息
+	setSessionCookie(w, sid)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"user": loginResp.Result,
+	})
 }
 
-// handleGetTodayCourse 代理获取今日课程
+// handleMe returns current user info for active session.
+func handleMe(w http.ResponseWriter, r *http.Request) {
+	sess, ok := getSession(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	// 延长会话有效期
+	if c, err := r.Cookie(cookieName); err == nil {
+		touchSession(c.Value)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"user": sess.User,
+	})
+}
+
+// handleCoursesToday gets today's courses by session and date.
+// Request: JSON { dateStr: "YYYYMMDD" } (dateStr optional -> defaults to today)
+func handleCoursesToday(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	sess, ok := getSession(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var body struct {
+		DateStr string `json:"dateStr"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	dateStr := strings.TrimSpace(body.DateStr)
+	if dateStr == "" {
+		dateStr = time.Now().Format("20060102")
+	}
+
+	target := "https://iclass.ucas.edu.cn:8181/app/course/get_stu_course_sched.action"
+	form := url.Values{}
+	form.Set("id", sess.UID)
+	form.Set("dateStr", dateStr)
+
+	req, err := http.NewRequest(http.MethodPost, target, bytes.NewBufferString(form.Encode()))
+	if err != nil {
+		http.Error(w, "build request failed", http.StatusInternalServerError)
+		return
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("sessionId", sess.UpstreamSessionID)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari MicroMessenger")
+	req.Header.Set("Accept", "*/*")
+	req.Header.Set("Connection", "keep-alive")
+	req.Header.Set("Referer", "https://servicewechat.com/wxdd3bd7d4acf54723/56/page-frame.html")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		http.Error(w, "upstream request failed", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		http.Error(w, "read upstream failed", http.StatusBadGateway)
+		return
+	}
+
+	// 尝试解析为结构体
+	var today models.TodayCoursesResponse
+	if err := json.Unmarshal(bodyBytes, &today); err != nil {
+		// 解析失败则透传原始
+		for k, vs := range resp.Header {
+			for _, v := range vs {
+				w.Header().Add(k, v)
+			}
+		}
+		w.WriteHeader(resp.StatusCode)
+		_, _ = w.Write(bodyBytes)
+		return
+	}
+
+	// 保存到本地 data/courses_<dateStr>.json
+	if err := os.MkdirAll("data", 0755); err != nil {
+		log.Printf("mkdir data failed: %v", err)
+	}
+	filePath := filepath.Join("data", "courses_"+dateStr+".json")
+	pretty, _ := json.MarshalIndent(today, "", "  ")
+	if err := os.WriteFile(filePath, pretty, 0644); err != nil {
+		log.Printf("write file failed: %v", err)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	_, _ = w.Write(pretty)
+}
+
+// handleSign triggers sign-in for a given timeTableId using current session.
+// Request: JSON { timeTableId: "..." }
+func handleSign(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	sess, ok := getSession(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var body struct {
+		TimeTableID string `json:"timeTableId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.TimeTableID) == "" {
+		http.Error(w, "invalid json body", http.StatusBadRequest)
+		return
+	}
+
+	// Upstream sign API as previously used by frontend
+	// Example: GET .../stu_scan_sign.action?timeTableId=<uuid>&timestamp=<ts>&id=<UID>
+	targetBase := "https://iclass.ucas.edu.cn:8181/app/course/stu_scan_sign.action"
+	q := url.Values{}
+	q.Set("timeTableId", body.TimeTableID)
+	q.Set("timestamp", fmt.Sprintf("%d", time.Now().UnixMilli()))
+	q.Set("id", sess.UID)
+	signURL := targetBase + "?" + q.Encode()
+
+	req, err := http.NewRequest(http.MethodGet, signURL, nil)
+	if err != nil {
+		http.Error(w, "build request failed", http.StatusInternalServerError)
+		return
+	}
+	req.Header.Set("sessionId", sess.UpstreamSessionID)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari MicroMessenger")
+	req.Header.Set("Accept", "*/*")
+	req.Header.Set("Connection", "keep-alive")
+	req.Header.Set("Referer", "https://servicewechat.com/wxdd3bd7d4acf54723/56/page-frame.html")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		http.Error(w, "upstream request failed", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
+}
+
+// handleLogout clears current session cookie and memory record.
+func handleLogout(w http.ResponseWriter, r *http.Request) {
+	c, err := r.Cookie(cookieName)
+	if err == nil {
+		sessionsMu.Lock()
+		delete(sessions, c.Value)
+		sessionsMu.Unlock()
+		// expire cookie
+		http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", Expires: time.Unix(0, 0), MaxAge: -1})
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ---------------------------------
+// Legacy endpoint kept for backward
+// ---------------------------------
+// handleGetTodayCourse 代理获取今日课程（旧接口，仍保留以兼容旧前端）
 func handleGetTodayCourse(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -116,8 +416,8 @@ func handleGetTodayCourse(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	// 固定 sessionId
-	req.Header.Set("sessionId", "220B4BF64B92633F236393F811A8586A")
+	// 固定 sessionId（旧逻辑）
+	req.Header.Set("sessionId", legacySessionID)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari MicroMessenger")
 	req.Header.Set("Accept", "*/*")
 	req.Header.Set("Connection", "keep-alive")
