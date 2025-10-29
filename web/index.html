@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>课程签到 Demo</title>
+    <link rel="stylesheet" href="/web/main.css" />
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 24px; }
+      .course-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; }
+      .qrcode-button { width: 40px; height: 40px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 8px; cursor: pointer; }
+      .sign-button { padding: 8px 12px; background: #2563eb; color: #fff; border-radius: 6px; border: none; cursor: pointer; }
+      .sign-button.signed { background: #94a3b8; cursor: not-allowed; }
+      .button-loading { opacity: .7; }
+      #courseMessage { margin: 8px 0; min-height: 20px; }
+
+      /* overlay */
+      #qrcodeOverlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: none; }
+      #qrcodeOverlay.active { display: block; }
+      #qrcodeContainer { position: fixed; inset: 0; margin: auto; width: 360px; background: #fff; border-radius: 10px; padding: 16px; display: none; }
+      #qrcodeContainer.active { display: block; }
+      #qrcodeCanvas { display: flex; align-items: center; justify-content: center; min-height: 260px; }
+      .row { margin-bottom: 12px; }
+      input, button { font-size: 14px; }
+      .input { padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div id="loginForm" class="login-container">
+        <h2>登录</h2>
+        <div class="form-group">
+          <label for="student_id">学号</label>
+          <input id="student_id" type="text" placeholder="请输入学号" />
+        </div>
+        <div class="form-group">
+          <label for="password">密码</label>
+          <input id="password" type="password" placeholder="请输入密码" />
+        </div>
+        <button id="loginButton" onclick="login()">登录</button>
+        <div id="loginMessage" class="message"></div>
+      </div>
+
+      <div id="courseContainer" class="course-container container">
+        <div class="header-buttons">
+          <h2>今日课程</h2>
+          <div>
+            <button class="refresh-button" onclick="fetchCourses()">刷新</button>
+            <button onclick="logout()">退出登录</button>
+          </div>
+        </div>
+        <div id="courseMessage" class="message"></div>
+        <div id="courseList"></div>
+      </div>
+    </div>
+
+    <div id="qrcodeOverlay" class="qrcode-overlay" onclick="closeQRCode()"></div>
+    <div id="qrcodeContainer" class="qrcode-container">
+      <div class="qrcode-title" id="qrcodeTitle">签到二维码</div>
+      <div id="qrcodeRefreshInfo" class="qrcode-refresh-info"></div>
+      <div id="qrcodeCanvas"></div>
+      <div style="margin-top:12px;">
+        <button onclick="manualRefreshQRCode()">刷新二维码</button>
+        <button onclick="closeQRCode()">关闭</button>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <script src="/web/main.js"></script>
+  </body>
+  </html>
+
+
