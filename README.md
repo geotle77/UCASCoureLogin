@@ -8,8 +8,6 @@ UCASCoureLogin 是一个以 Go 实现的轻量级代理服务，用于对接中�
 - `auth/`：登录与课表请求的参数、响应结构体定义（`LoginParams`、`LoginResponse`、`TodayCourseParams` 等）。
 - `models/`：课程与签到相关的数据模型（`CourseRecord` 等）。
 - `web/`：内置的调试前端（`index.html`、`main.js`、`main.css`），可直接访问 `http://localhost:8081/web/`。
-- `data/`：脱机调试用的 JSON 样例（例如 `courses_YYYYMMDD.json`）。
-- `example.txt`：记录当前使用的上游登录 URL，若官方接口变动需同步更新。
 
 ## 核心功能
 - 代理登录：将手机号、密码等字段转发到上游 `login.action` 接口，并在本地保存 `sessionId`。
