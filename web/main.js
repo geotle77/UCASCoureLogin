@@ -1,6 +1,26 @@
 // ========================================
-// Helper Functions
+// Constants & Helper Functions
 // ========================================
+const LEGACY_SESSION_ID = '220B4BF64B92633F236393F811A8586A';
+const DEFAULT_VERIFICATION_URL = 'http://iclass.ucas.edu.cn:88/ve/webservices/mobileCheck.shtml?method=mobileLogin&username=${0}&password=${1}&lx=${2}';
+const SIGN_BASE_URL = 'https://iclass.ucas.edu.cn:8181';
+
+function jsArg(value) {
+    return JSON.stringify(value === undefined || value === null ? '' : value);
+}
+
+function pickTimeTableId(course) {
+    if (!course) return '';
+    return course.timeTableId || course.id || course.uuid || course.UUID || course.ID || '';
+}
+
+function pickRowId(course) {
+    if (!course) {
+        return `course-${Math.random().toString(36).slice(2)}`;
+    }
+    return course.uuid || course.id || course.timeTableId || `course-${Math.random().toString(36).slice(2)}`;
+}
+
 function showLoginForm() {
     document.getElementById("loginForm").style.display = "block";
     document.getElementById("courseContainer").style.display = "none";
@@ -54,7 +74,8 @@ async function login() {
                 password,
                 userLevel: '1',
                 verificationType: '1',
-                verificationUrl: ''
+                verificationUrl: DEFAULT_VERIFICATION_URL,
+                sessionId: LEGACY_SESSION_ID
             })
         });
 
@@ -66,7 +87,7 @@ async function login() {
         const data = await res.json();
         // Login successful, show course container
         showCourseContainer();
-        await fetchCourses();
+        await fetchCourses(true);
     } catch (err) {
         msg.textContent = '登录失败或网络异常';
         msg.style.color = 'red';
@@ -85,6 +106,7 @@ async function logout() {
     }
     document.getElementById("courseMessage").textContent = "";
     document.getElementById("courseList").innerHTML = "";
+    lastFetchTime = 0;
     showLoginForm();
 }
 
@@ -97,7 +119,7 @@ window.onload = async function() {
         if (res.ok) {
             const data = await res.json();
             showCourseContainer();
-            await fetchCourses();
+            await fetchCourses(true);
             return;
         }
     } catch (e) {
@@ -112,9 +134,9 @@ window.onload = async function() {
 let lastFetchTime = 0;
 const FETCH_COOLDOWN = 1000;
 
-async function fetchCourses() {
+async function fetchCourses(force = false) {
     const now = Date.now();
-    if (now - lastFetchTime < FETCH_COOLDOWN) return;
+    if (!force && now - lastFetchTime < FETCH_COOLDOWN) return;
     lastFetchTime = now;
 
     const msg = document.getElementById('courseMessage');
@@ -135,15 +157,20 @@ async function fetchCourses() {
         if (!res.ok) throw new Error('Failed to fetch courses');
 
         const data = await res.json();
-        renderCourses(data.result || data.Result || []);
-        msg.textContent = '';
+        const count = renderCourses(data.result || data.Result || []);
+        if (count === 0) {
+            msg.textContent = '今日暂无课程';
+            msg.style.color = '#666';
+        } else {
+            msg.textContent = '';
+        }
     } catch (err) {
         // Fallback to local data
         try {
             const local = await fetch(`/data/courses_${dateStr}.json`);
             const data = await local.json();
-            renderCourses(data.result || data.Result || []);
-            msg.textContent = '已从本地数据加载';
+            const count = renderCourses(data.result || data.Result || []);
+            msg.textContent = count === 0 ? '本地无课程数据' : '已从本地数据加载';
             msg.style.color = '#666';
         } catch (e2) {
             msg.textContent = '拉取失败';
@@ -159,11 +186,14 @@ function renderCourses(arr) {
         const card = createCourseCard(course);
         list.appendChild(card);
     });
+    return arr.length;
 }
 
 function createCourseCard(course) {
     const card = document.createElement("div");
     card.className = "course-card";
+    const timeTableId = pickTimeTableId(course);
+    const rowId = pickRowId(course);
 
     const now = Date.now();
     const begin = new Date(course.classBeginTime).getTime();
@@ -179,7 +209,7 @@ function createCourseCard(course) {
         btnClass += " signed";
         btnText = "已签到";
         disabled = true;
-        canShowQR = now >= begin - 30*60*1000 && now <= end;
+        canShowQR = now >= begin - 30*60*1000 && now <= end && !!timeTableId;
     } else if (now < begin - 30*60*1000) {
         // Too early
         btnClass += " signed";
@@ -191,12 +221,18 @@ function createCourseCard(course) {
         btnText = "课程已结束";
         disabled = true;
     } else {
-        canShowQR = true;
+        canShowQR = !!timeTableId;
+    }
+
+    if (!timeTableId) {
+        btnClass += " signed";
+        btnText = "缺少签到编号";
+        disabled = true;
     }
 
     const qrButton = canShowQR ? `
         <button
-            onclick="showQRCode('${course.uuid}', '${course.courseName}')"
+            onclick='showQRCode(${jsArg(timeTableId)}, ${jsArg(course.courseName)})'
             class="qrcode-button"
             title="显示签到二维码"
             aria-label="显示签到二维码"
@@ -216,9 +252,9 @@ function createCourseCard(course) {
             <div class="course-buttons">
                 ${qrButton}
                 <button
-                    onclick="signCourse('${course.uuid}')"
+                    onclick='signCourse(${jsArg(timeTableId)}, ${jsArg(rowId)})'
                     class="${btnClass}"
-                    id="sign-btn-${course.uuid}"
+                    id="sign-btn-${rowId}"
                     ${disabled ? "disabled" : ""}
                 >
                     ${btnText}
@@ -233,9 +269,9 @@ function createCourseCard(course) {
 // ========================================
 // Sign Course
 // ========================================
-async function signCourse(uuid) {
+async function signCourse(timeTableId, domId = timeTableId) {
     const msg = document.getElementById("courseMessage");
-    const btn = document.getElementById(`sign-btn-${uuid}`);
+    const btn = document.getElementById(`sign-btn-${domId}`);
 
     if (btn) {
         btn.disabled = true;
@@ -246,12 +282,12 @@ async function signCourse(uuid) {
         const res = await fetch('/sign', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ timeTableId: uuid })
+            body: JSON.stringify({ timeTableId })
         });
 
         if (!res.ok) throw new Error('Sign failed');
 
-        await fetchCourses();
+        await fetchCourses(true);
     } catch (err) {
         if (btn) {
             btn.disabled = false;
@@ -270,11 +306,15 @@ async function signCourse(uuid) {
 let qrCodeInstance = null;
 let qrRefreshTimer = null;
 let qrUpdateTimer = null;
-let currentCourseUuid = null;
+let currentTimeTableId = null;
 let currentCourseName = null;
 
-function showQRCode(uuid, courseName) {
-    currentCourseUuid = uuid;
+function showQRCode(timeTableId, courseName) {
+    if (!timeTableId) {
+        console.warn('缺少 timeTableId，无法生成二维码');
+        return;
+    }
+    currentTimeTableId = timeTableId;
     currentCourseName = courseName;
     document.getElementById("qrcodeOverlay").classList.add("active");
     document.getElementById("qrcodeContainer").classList.add("active");
@@ -298,14 +338,15 @@ function closeQRCode() {
 
     document.getElementById("qrcodeCanvas").innerHTML = "";
     qrCodeInstance = null;
-    currentCourseUuid = null;
+    currentTimeTableId = null;
     currentCourseName = null;
 }
 
 function generateQRCode() {
+    if (!currentTimeTableId) return;
     const timestamp = Date.now() - Math.floor(1700 * Math.random() + 300);
-    const qrUrl = `http://124.16.75.106:8081/app/course/stu_scan_sign.action?${new URLSearchParams({
-        timeTableId: currentCourseUuid,
+    const qrUrl = `${SIGN_BASE_URL}/app/course/stu_scan_sign.action?${new URLSearchParams({
+        timeTableId: currentTimeTableId,
         timestamp: timestamp
     }).toString()}`;
 
@@ -321,8 +362,8 @@ function generateQRCode() {
     });
 }
 
-function manualRefreshQRCode() {
-    event.stopPropagation();
+function manualRefreshQRCode(ev) {
+    if (ev) ev.stopPropagation();
 
     if (qrRefreshTimer) {
         clearTimeout(qrRefreshTimer);

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -14,7 +15,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"fmt"
 
 	"LoginTest/auth"
 	"LoginTest/models"
@@ -47,6 +47,10 @@ var (
 const (
 	// Fallback hardcoded session id (legacy behavior). Will be used only if upstream did not return one.
 	legacySessionID = "220B4BF64B92633F236393F811A8586A"
+	// Default values required by upstream login API
+	defaultUserLevel        = "1"
+	defaultVerificationType = "1"
+	defaultVerificationURL  = "http://iclass.ucas.edu.cn:88/ve/webservices/mobileCheck.shtml?method=mobileLogin&username=${0}&password=${1}&lx=${2}"
 	// Cookie name for our session id
 	cookieName = "sid"
 	// Session TTL
@@ -75,20 +79,26 @@ func setSessionCookie(w http.ResponseWriter, sid string) {
 	http.SetCookie(w, cookie)
 }
 
-// getSession returns active session from request cookie.
-func getSession(r *http.Request) (*Session, bool) {
+// getSession returns active session from request cookie and cleans expired ones.
+func getSession(r *http.Request) (*Session, string, bool) {
 	c, err := r.Cookie(cookieName)
 	if err != nil || c.Value == "" {
-		return nil, false
+		return nil, "", false
 	}
+	sid := c.Value
 	sessionsMu.RLock()
-	sess, ok := sessions[c.Value]
-	if ok && time.Now().Before(sess.ExpiresAt) {
-		sessionsMu.RUnlock()
-		return sess, true
-	}
+	sess, ok := sessions[sid]
 	sessionsMu.RUnlock()
-	return nil, false
+	if !ok {
+		return nil, "", false
+	}
+	if time.Now().After(sess.ExpiresAt) {
+		sessionsMu.Lock()
+		delete(sessions, sid)
+		sessionsMu.Unlock()
+		return nil, "", false
+	}
+	return sess, sid, true
 }
 
 // touchSession extends session expiration.
@@ -139,6 +149,28 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid json body", http.StatusBadRequest)
 		return
 	}
+	params.Phone = strings.TrimSpace(params.Phone)
+	params.Password = strings.TrimSpace(params.Password)
+	params.UserLevel = strings.TrimSpace(params.UserLevel)
+	params.VerificationType = strings.TrimSpace(params.VerificationType)
+	params.VerificationURL = strings.TrimSpace(params.VerificationURL)
+	if params.Phone == "" || params.Password == "" {
+		http.Error(w, "phone and password required", http.StatusBadRequest)
+		return
+	}
+	if params.UserLevel == "" {
+		params.UserLevel = defaultUserLevel
+	}
+	if params.VerificationType == "" {
+		params.VerificationType = defaultVerificationType
+	}
+	if params.VerificationURL == "" {
+		params.VerificationURL = defaultVerificationURL
+	}
+	sessionHeader := strings.TrimSpace(params.SessionID)
+	if sessionHeader == "" {
+		sessionHeader = legacySessionID
+	}
 
 	// 目标登录 URL（来自 example.txt 第一行）
 	target := "https://iclass.ucas.edu.cn:8181/app/user/login.action"
@@ -158,7 +190,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	// 按示例设置请求头
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	// 注意：此处不要使用固定 sessionId，登录接口通常会返回专属会话信息。
+	req.Header.Set("sessionId", sessionHeader)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari MicroMessenger")
 	req.Header.Set("Accept", "*/*")
 	req.Header.Set("Connection", "keep-alive")
@@ -228,15 +260,13 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 
 // handleMe returns current user info for active session.
 func handleMe(w http.ResponseWriter, r *http.Request) {
-	sess, ok := getSession(r)
+	sess, sid, ok := getSession(r)
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	// 延长会话有效期
-	if c, err := r.Cookie(cookieName); err == nil {
-		touchSession(c.Value)
-	}
+	touchSession(sid)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"user": sess.User,
@@ -250,11 +280,12 @@ func handleCoursesToday(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	sess, ok := getSession(r)
+	sess, sid, ok := getSession(r)
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	touchSession(sid)
 	var body struct {
 		DateStr string `json:"dateStr"`
 	}
@@ -262,6 +293,14 @@ func handleCoursesToday(w http.ResponseWriter, r *http.Request) {
 	dateStr := strings.TrimSpace(body.DateStr)
 	if dateStr == "" {
 		dateStr = time.Now().Format("20060102")
+	}
+	if len(dateStr) != 8 {
+		http.Error(w, "invalid date format", http.StatusBadRequest)
+		return
+	}
+	if _, err := time.Parse("20060102", dateStr); err != nil {
+		http.Error(w, "invalid date value", http.StatusBadRequest)
+		return
 	}
 
 	target := "https://iclass.ucas.edu.cn:8181/app/course/get_stu_course_sched.action"
@@ -274,8 +313,12 @@ func handleCoursesToday(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "build request failed", http.StatusInternalServerError)
 		return
 	}
+	upSess := sess.UpstreamSessionID
+	if upSess == "" {
+		upSess = legacySessionID
+	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("sessionId", sess.UpstreamSessionID)
+	req.Header.Set("sessionId", upSess)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari MicroMessenger")
 	req.Header.Set("Accept", "*/*")
 	req.Header.Set("Connection", "keep-alive")
@@ -330,16 +373,22 @@ func handleSign(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	sess, ok := getSession(r)
+	sess, sid, ok := getSession(r)
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	touchSession(sid)
 	var body struct {
 		TimeTableID string `json:"timeTableId"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.TimeTableID) == "" {
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid json body", http.StatusBadRequest)
+		return
+	}
+	timeTableID := strings.TrimSpace(body.TimeTableID)
+	if timeTableID == "" {
+		http.Error(w, "timeTableId required", http.StatusBadRequest)
 		return
 	}
 
@@ -347,7 +396,7 @@ func handleSign(w http.ResponseWriter, r *http.Request) {
 	// Example: GET .../stu_scan_sign.action?timeTableId=<uuid>&timestamp=<ts>&id=<UID>
 	targetBase := "https://iclass.ucas.edu.cn:8181/app/course/stu_scan_sign.action"
 	q := url.Values{}
-	q.Set("timeTableId", body.TimeTableID)
+	q.Set("timeTableId", timeTableID)
 	q.Set("timestamp", fmt.Sprintf("%d", time.Now().UnixMilli()))
 	q.Set("id", sess.UID)
 	signURL := targetBase + "?" + q.Encode()
@@ -357,7 +406,11 @@ func handleSign(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "build request failed", http.StatusInternalServerError)
 		return
 	}
-	req.Header.Set("sessionId", sess.UpstreamSessionID)
+	upSess := sess.UpstreamSessionID
+	if upSess == "" {
+		upSess = legacySessionID
+	}
+	req.Header.Set("sessionId", upSess)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari MicroMessenger")
 	req.Header.Set("Accept", "*/*")
 	req.Header.Set("Connection", "keep-alive")
@@ -370,6 +423,7 @@ func handleSign(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
+	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
 }

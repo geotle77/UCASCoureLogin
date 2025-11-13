@@ -45,7 +45,7 @@
         <div class="header-buttons">
           <h2>今日课程</h2>
           <div>
-            <button class="refresh-button" onclick="fetchCourses()">刷新</button>
+            <button class="refresh-button" onclick="fetchCourses(true)">刷新</button>
             <button onclick="logout()">退出登录</button>
           </div>
         </div>
@@ -60,7 +60,7 @@
       <div id="qrcodeRefreshInfo" class="qrcode-refresh-info"></div>
       <div id="qrcodeCanvas"></div>
       <div style="margin-top:12px;">
-        <button onclick="manualRefreshQRCode()">刷新二维码</button>
+        <button onclick="manualRefreshQRCode(event)">刷新二维码</button>
         <button onclick="closeQRCode()">关闭</button>
       </div>
     </div>
@@ -69,5 +69,3 @@
     <script src="/web/main.js"></script>
   </body>
   </html>
-
-
