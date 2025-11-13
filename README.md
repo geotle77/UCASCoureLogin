@@ -10,7 +10,7 @@ UCASCoureLogin 是一个以 Go 实现的轻量级代理服务，用于对接中�
 - `web/`：内置的调试前端（`index.html`、`main.js`、`main.css`），可直接访问 `http://localhost:8081/web/`。
 
 ## 核心功能
-- 代理登录：将手机号、密码等字段转发到上游 `login.action` 接口，并在本地保存 `sessionId`。
+- 代理登录：将学号、密码等字段转发到上游 `login.action` 接口，并在本地保存 `sessionId`。
 - 会话管理：为客户端颁发 `sid` Cookie，内存中维护 24 小时 TTL，可随时扩展为 Redis 等外部存储。
 - 课程查询：`/courses/today` 与 `/getTodayCourse` 返回今日课表，同时支持读取 `data/` 中的缓存文件以便离线演示。
 - 签到转发：`/sign` 路由用于调度签到请求（可结合 `CourseRecord` 字段二次开发）。
@@ -44,9 +44,3 @@ UCASCoureLogin 是一个以 Go 实现的轻量级代理服务，用于对接中�
 ## 配置与安全提示
 - 默认会向上游发送 `legacySessionID`（见 `server.go`）；若官方限制变动，请替换并记录来源。
 - 勿在日志中打印明文密码、手机号或 `sessionId`；调试时可使用掩码。
-- 更新上游地址时同步修改 `example.txt` 与代码常量，方便追踪。
-
-## 测试与数据
-- 推荐使用 `net/http/httptest` 模拟请求，分别覆盖登录验证、会话过期与课程序列化逻辑。
-- `data/` 下的样例文件可作为离线响应或单元测试夹具，命名格式建议 `courses_YYYYMMDD.json`。
-- 若需要长久持久化会话，可将内存 `sessions` 替换为可插拔存储层，并编写相应测试。
