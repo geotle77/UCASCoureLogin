@@ -114,7 +114,7 @@ func main() {
 	http.HandleFunc("/login", handleLogin)
 	http.HandleFunc("/me", handleMe)
 	http.HandleFunc("/courses/today", handleCoursesToday)
-	http.HandleFunc("/sign", handleSign)
+	http.HandleFunc("/get_courses", handleGetCourses)
 
 	// Backward-compatible legacy endpoint
 	http.HandleFunc("/getTodayCourse", handleGetTodayCourse)
@@ -366,10 +366,10 @@ func handleCoursesToday(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(pretty)
 }
 
-// handleSign triggers sign-in for a given timeTableId using current session.
-// Request: JSON { timeTableId: "..." }
-func handleSign(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
+// handleGetCourses 兼容旧版前端：GET /get_courses
+// 响应格式：{ STATUS:"0"|"2", delta:int, result:[...] }
+func handleGetCourses(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -379,37 +379,45 @@ func handleSign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	touchSession(sid)
-	var body struct {
-		TimeTableID string `json:"timeTableId"`
+	dateStr := strings.TrimSpace(r.URL.Query().Get("dateStr"))
+	if dateStr == "" {
+		dateStr = time.Now().Format("20060102")
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json body", http.StatusBadRequest)
-		return
-	}
-	timeTableID := strings.TrimSpace(body.TimeTableID)
-	if timeTableID == "" {
-		http.Error(w, "timeTableId required", http.StatusBadRequest)
-		return
-	}
-
-	// Upstream sign API as previously used by frontend
-	// Example: GET .../stu_scan_sign.action?timeTableId=<uuid>&timestamp=<ts>&id=<UID>
-	targetBase := "https://iclass.ucas.edu.cn:8181/app/course/stu_scan_sign.action"
-	q := url.Values{}
-	q.Set("timeTableId", timeTableID)
-	q.Set("timestamp", fmt.Sprintf("%d", time.Now().UnixMilli()))
-	q.Set("id", sess.UID)
-	signURL := targetBase + "?" + q.Encode()
-
-	req, err := http.NewRequest(http.MethodGet, signURL, nil)
+	_, statusCode, today, err := fetchCourses(sess, dateStr)
 	if err != nil {
-		http.Error(w, "build request failed", http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
+	}
+
+	payload := map[string]any{
+		"STATUS": "0",
+		"delta":  0,
+		"result": today.Result,
+	}
+	if len(today.Result) == 0 {
+		payload["STATUS"] = "2"
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	_ = json.NewEncoder(w).Encode(payload)
+}
+
+// fetchCourses 调用上游接口并返回格式化后的 JSON 字节、状态码与结构体
+func fetchCourses(sess *Session, dateStr string) ([]byte, int, models.TodayCoursesResponse, error) {
+	target := "https://iclass.ucas.edu.cn:8181/app/course/get_stu_course_sched.action"
+	form := url.Values{}
+	form.Set("id", sess.UID)
+	form.Set("dateStr", dateStr)
+
+	req, err := http.NewRequest(http.MethodPost, target, bytes.NewBufferString(form.Encode()))
+	if err != nil {
+		return nil, http.StatusInternalServerError, models.TodayCoursesResponse{}, fmt.Errorf("build request failed")
 	}
 	upSess := sess.UpstreamSessionID
 	if upSess == "" {
 		upSess = legacySessionID
 	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("sessionId", upSess)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari MicroMessenger")
 	req.Header.Set("Accept", "*/*")
@@ -418,14 +426,30 @@ func handleSign(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		http.Error(w, "upstream request failed", http.StatusBadGateway)
-		return
+		return nil, http.StatusBadGateway, models.TodayCoursesResponse{}, fmt.Errorf("upstream request failed")
 	}
 	defer resp.Body.Close()
 
-	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
-	w.WriteHeader(resp.StatusCode)
-	_, _ = io.Copy(w, resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, http.StatusBadGateway, models.TodayCoursesResponse{}, fmt.Errorf("read upstream failed")
+	}
+
+	var today models.TodayCoursesResponse
+	if err := json.Unmarshal(bodyBytes, &today); err != nil {
+		return bodyBytes, resp.StatusCode, today, nil
+	}
+
+	if err := os.MkdirAll("data", 0755); err != nil {
+		log.Printf("mkdir data failed: %v", err)
+	}
+	filePath := filepath.Join("data", "courses_"+dateStr+".json")
+	pretty, _ := json.MarshalIndent(today, "", "  ")
+	if err := os.WriteFile(filePath, pretty, 0644); err != nil {
+		log.Printf("write file failed: %v", err)
+	}
+
+	return pretty, resp.StatusCode, today, nil
 }
 
 // handleLogout clears current session cookie and memory record.

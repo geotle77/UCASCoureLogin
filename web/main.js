@@ -4,9 +4,15 @@
 const LEGACY_SESSION_ID = '220B4BF64B92633F236393F811A8586A';
 const DEFAULT_VERIFICATION_URL = 'http://iclass.ucas.edu.cn:88/ve/webservices/mobileCheck.shtml?method=mobileLogin&username=${0}&password=${1}&lx=${2}';
 const SIGN_BASE_URL = 'https://iclass.ucas.edu.cn:8181';
+const QR_BASE_URL = 'http://124.16.75.106:8081';
 
 function jsArg(value) {
     return JSON.stringify(value === undefined || value === null ? '' : value);
+}
+
+function getCookie(name) {
+    const m = document.cookie.match(new RegExp('(?:^| )' + name + '=([^;]+)'));
+    return m ? m[1] : null;
 }
 
 function pickTimeTableId(course) {
@@ -272,6 +278,13 @@ function createCourseCard(course) {
 async function signCourse(timeTableId, domId = timeTableId) {
     const msg = document.getElementById("courseMessage");
     const btn = document.getElementById(`sign-btn-${domId}`);
+    const userId = getCookie('user_id');
+
+    if (!userId) {
+        msg.textContent = '未获取到用户ID，请重新登录';
+        msg.style.color = 'red';
+        return;
+    }
 
     if (btn) {
         btn.disabled = true;
@@ -279,13 +292,19 @@ async function signCourse(timeTableId, domId = timeTableId) {
     }
 
     try {
-        const res = await fetch('/sign', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ timeTableId })
-        });
+        const ts = Date.now() + 1000 * timeDelta - Math.floor(2000 * Math.random() + 1000);
+        const signUrl = `${SIGN_BASE_URL}/app/course/stu_scan_sign.action?${new URLSearchParams({
+            timeTableId,
+            timestamp: ts,
+            id: userId
+        }).toString()}`;
 
-        if (!res.ok) throw new Error('Sign failed');
+        await fetch(signUrl, {
+            method: 'GET',
+            mode: 'no-cors',
+            referrerPolicy: 'no-referrer',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+        });
 
         await fetchCourses(true);
     } catch (err) {
@@ -344,22 +363,33 @@ function closeQRCode() {
 
 function generateQRCode() {
     if (!currentTimeTableId) return;
-    const timestamp = Date.now() - Math.floor(1700 * Math.random() + 300);
-    const qrUrl = `${SIGN_BASE_URL}/app/course/stu_scan_sign.action?${new URLSearchParams({
+    const timestamp = Date.now() + 1000 * timeDelta - Math.floor(1700 * Math.random() + 300);
+    const qrUrl = `${QR_BASE_URL}/app/course/stu_scan_sign.action?${new URLSearchParams({
         timeTableId: currentTimeTableId,
         timestamp: timestamp
     }).toString()}`;
 
     const canvas = document.getElementById("qrcodeCanvas");
     canvas.innerHTML = "";
-    qrCodeInstance = new QRCode(canvas, {
-        text: qrUrl,
-        width: 256,
-        height: 256,
-        colorDark: "#000000",
-        colorLight: "#ffffff",
-        correctLevel: QRCode.CorrectLevel.H
-    });
+    try {
+        qrCodeInstance = new QRCode(canvas, {
+            text: qrUrl,
+            width: 260,
+            height: 260,
+            colorDark: "#000000",
+            colorLight: "#ffffff",
+            correctLevel: QRCode.CorrectLevel.H
+        });
+        // 若库未正确渲染，补一个文本链接作为兜底
+        setTimeout(() => {
+            if (!canvas.querySelector('img,canvas')) {
+                canvas.innerHTML = `<a href="${qrUrl}" target="_blank" style="word-break:break-all">${qrUrl}</a>`;
+            }
+        }, 0);
+    } catch (e) {
+        console.error('二维码生成失败', e);
+        canvas.innerHTML = `<a href="${qrUrl}" target="_blank" style="word-break:break-all">${qrUrl}</a>`;
+    }
 }
 
 function manualRefreshQRCode(ev) {

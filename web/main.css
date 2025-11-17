@@ -210,21 +210,24 @@ button:disabled {
 .qrcode-container {
     display: none;
     position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
+    inset: 0;
+    margin: auto;
+    width: 380px;
+    max-width: 92vw;
+    max-height: 92vh;
     background: white;
-    padding: 30px;
+    padding: 28px 24px;
     border-radius: 12px;
     box-shadow: 0 4px 20px rgba(0,0,0,0.3);
     z-index: 1000;
     text-align: center;
-    max-width: 90vw;
-    max-height: 90vh;
-    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
 }
 .qrcode-container.active {
-    display: block;
+    display: flex;
 }
 .qrcode-overlay {
     display: none;
@@ -252,8 +255,13 @@ button:disabled {
 }
 
 #qrcodeCanvas {
-    margin: 0 auto;
+    margin: 12px auto;
     transition: opacity 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 260px;
+    width: 100%;
 }
 
 #qrcodeCanvas:hover {
@@ -480,11 +488,13 @@ button:disabled {
         margin: 0 auto;
     }
 
-    #qrcodeCanvas img {
-        max-width: 100%;
-        height: auto !important;
-        width: 100% !important;
-    }
+#qrcodeCanvas img,
+#qrcodeCanvas canvas {
+    width: 260px !important;
+    height: 260px !important;
+    max-width: 100%;
+    max-height: 100%;
+}
 
     .message {
         font-size: 0.9em;
