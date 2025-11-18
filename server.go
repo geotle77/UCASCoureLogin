@@ -115,6 +115,7 @@ func main() {
 	http.HandleFunc("/me", handleMe)
 	http.HandleFunc("/courses/today", handleCoursesToday)
 	http.HandleFunc("/get_courses", handleGetCourses)
+	http.HandleFunc("/api/sign-in", handleSignIn)
 
 	// Backward-compatible legacy endpoint
 	http.HandleFunc("/getTodayCourse", handleGetTodayCourse)
@@ -134,6 +135,78 @@ func main() {
 	log.Printf("listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, nil))
 }
+
+// handleSignIn proxies the sign-in request to the upstream service.
+// Request: JSON { timeTableId: "..." }
+// Response: (proxied from upstream)
+func handleSignIn(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	sess, sid, ok := getSession(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	touchSession(sid)
+
+	var body struct {
+		TimeTableID string `json:"timeTableId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid json body", http.StatusBadRequest)
+		return
+	}
+	timeTableID := strings.TrimSpace(body.TimeTableID)
+	if timeTableID == "" {
+		http.Error(w, "timeTableId is required", http.StatusBadRequest)
+		return
+	}
+
+	// Construct the upstream URL
+	target, _ := url.Parse("https://iclass.ucas.edu.cn:8181/app/course/stu_scan_sign.action")
+	q := target.Query()
+	q.Set("id", sess.UID)
+	q.Set("timeTableId", timeTableID)
+	// The timestamp needs to be in milliseconds
+	q.Set("timestamp", fmt.Sprintf("%d", time.Now().UnixMilli()))
+	target.RawQuery = q.Encode()
+
+	req, err := http.NewRequest(http.MethodGet, target.String(), nil)
+	if err != nil {
+		http.Error(w, "build request failed", http.StatusInternalServerError)
+		return
+	}
+
+	// Set headers similar to other requests
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari MicroMessenger")
+	req.Header.Set("Accept", "*/*")
+	req.Header.Set("Connection", "keep-alive")
+	req.Header.Set("Referer", "https://servicewechat.com/wxdd3bd7d4acf54723/56/page-frame.html")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		http.Error(w, "upstream request failed", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	// Proxy headers
+	for k, vs := range resp.Header {
+		for _, v := range vs {
+			w.Header().Add(k, v)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+
+	// Proxy body
+	if _, err := io.Copy(w, resp.Body); err != nil {
+		log.Printf("error copying upstream response body: %v", err)
+	}
+}
+
 
 // handleLogin proxies login to upstream, creates a local session, and returns basic user info.
 // Request: JSON { phone, password, userLevel, verificationType, verificationUrl }
@@ -172,7 +245,6 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		sessionHeader = legacySessionID
 	}
 
-	// 目标登录 URL（来自 example.txt 第一行）
 	target := "https://iclass.ucas.edu.cn:8181/app/user/login.action"
 
 	form := url.Values{}

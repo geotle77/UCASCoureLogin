@@ -15,9 +15,9 @@
       #courseMessage { margin: 8px 0; min-height: 20px; }
 
       /* overlay */
-      #qrcodeOverlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: none; }
+      #qrcodeOverlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: none; z-index: 99; }
       #qrcodeOverlay.active { display: block; }
-      #qrcodeContainer { position: fixed; inset: 0; margin: auto; width: 360px; background: #fff; border-radius: 10px; padding: 16px; display: none; }
+      #qrcodeContainer { position: fixed; inset: 0; margin: auto; width: 360px; height: fit-content; background: #fff; border-radius: 10px; padding: 16px; display: none; z-index: 100; }
       #qrcodeContainer.active { display: block; }
       #qrcodeCanvas { display: flex; align-items: center; justify-content: center; min-height: 260px; }
       .row { margin-bottom: 12px; }
