@@ -18,7 +18,7 @@ function getCookie(name) {
 
 function pickTimeTableId(course) {
     if (!course) return '';
-    return course.timeTableId || course.id || course.uuid || course.UUID || course.ID || '';
+    return course.uuid || course.timeTableId || course.id || course.UUID || course.ID || '';
 }
 
 function pickRowId(course) {
@@ -98,6 +98,7 @@ async function login() {
 
         const data = await res.json();
         currentUser = data.user; // Store user info
+        document.cookie = `user_id=${data.user.id}; path=/; max-age=86400`; // Set cookie for 1 day
         // Login successful, show course container
         showCourseContainer();
         await fetchCourses(true);
@@ -133,6 +134,7 @@ window.onload = async function() {
         if (res.ok) {
             const data = await res.json();
             currentUser = data.user; // Store user info
+            document.cookie = `user_id=${data.user.id}; path=/; max-age=86400`; // Set cookie for 1 day
             showCourseContainer();
             await fetchCourses(true);
             return;
@@ -268,9 +270,9 @@ function createCourseCard(course) {
             <div class="course-buttons">
                 ${qrButton}
                 <button
-                    onclick='signCourse(${jsArg(timeTableId)}, ${jsArg(rowId)})'
+                    onclick='signCourse(${jsArg(timeTableId)})'
                     class="${btnClass}"
-                    id="sign-btn-${rowId}"
+                    id="sign-btn-${timeTableId}"
                     ${disabled ? "disabled" : ""}
                 >
                     ${btnText}
@@ -285,13 +287,14 @@ function createCourseCard(course) {
 // ========================================
 // Sign Course
 // ========================================
-async function signCourse(timeTableId, domId = timeTableId) {
+async function signCourse(timeTableId) {
+    const userId = getCookie("user_id");
     const msg = document.getElementById("courseMessage");
-    const btn = document.getElementById(`sign-btn-${domId}`);
+    const btn = document.getElementById(`sign-btn-${timeTableId}`);
 
-    if (!currentUser || !currentUser.id) {
-        msg.textContent = '未获取到用户ID，请重新登录';
-        msg.style.color = 'red';
+    if (!userId) {
+        msg.textContent = "用户ID不存在，请重新登录";
+        msg.style.color = "red";
         return;
     }
 
@@ -300,31 +303,38 @@ async function signCourse(timeTableId, domId = timeTableId) {
         btn.classList.add("button-loading");
     }
 
+    // Construct the URL with a randomized timestamp, mimicking the provided logic
+    const timestamp = Date.now(); // Use a simple, direct timestamp
+    const targetUrl = `https://iclass.ucas.edu.cn:8181/app/course/stu_scan_sign.action?timeTableId=${timeTableId}&timestamp=${timestamp}&id=${userId}`;
+
     try {
-        const res = await fetch('/api/sign-in', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ timeTableId })
+        // Fire-and-forget request using no-cors. We cannot see the response.
+        await fetch(targetUrl, {
+            method: "GET",
+            mode: "no-cors",
+            referrerPolicy: "no-referrer",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded"
+            }
         });
 
-        if (!res.ok) {
-            const errText = await res.text();
-            throw new Error(`Sign-in failed: ${errText}`);
-        }
-
-        // The sign-in response might contain information, but for now,
-        // we just refresh the course list to show the updated status.
-        await fetchCourses(true);
+        // Assume success and refresh the course list after a short delay
+        // to give the backend time to process the sign-in.
+        setTimeout(() => {
+            fetchCourses(true);
+        }, 1000);
 
     } catch (err) {
         if (btn) {
             btn.disabled = false;
             btn.classList.remove("button-loading");
         }
-        msg.textContent = '签到失败或网络错误，请重试';
-        msg.style.color = 'red';
-        setTimeout(() => { msg.textContent = ''; }, 3000);
-        console.error(err);
+        msg.textContent = "网络错误，请重试";
+        msg.style.color = "red",
+        setTimeout(() => {
+            msg.textContent = ""
+        }, 3000);
+        console.error("Error:", err);
     }
 }
 

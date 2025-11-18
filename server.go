@@ -137,7 +137,7 @@ func main() {
 }
 
 // handleSignIn proxies the sign-in request to the upstream service.
-// Request: JSON { timeTableId: "..." }
+// Request: JSON { userId: "...", timeTableId: "..." }
 // Response: (proxied from upstream)
 func handleSignIn(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -145,30 +145,25 @@ func handleSignIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sess, sid, ok := getSession(r)
-	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	touchSession(sid)
-
 	var body struct {
+		UserID      string `json:"userId"`
 		TimeTableID string `json:"timeTableId"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid json body", http.StatusBadRequest)
 		return
 	}
+	userID := strings.TrimSpace(body.UserID)
 	timeTableID := strings.TrimSpace(body.TimeTableID)
-	if timeTableID == "" {
-		http.Error(w, "timeTableId is required", http.StatusBadRequest)
+	if timeTableID == "" || userID == "" {
+		http.Error(w, "userId and timeTableId are required", http.StatusBadRequest)
 		return
 	}
 
 	// Construct the upstream URL
 	target, _ := url.Parse("https://iclass.ucas.edu.cn:8181/app/course/stu_scan_sign.action")
 	q := target.Query()
-	q.Set("id", sess.UID)
+	q.Set("id", userID)
 	q.Set("timeTableId", timeTableID)
 	// The timestamp needs to be in milliseconds
 	q.Set("timestamp", fmt.Sprintf("%d", time.Now().UnixMilli()))
@@ -202,9 +197,17 @@ func handleSignIn(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(resp.StatusCode)
 
 	// Proxy body
-	if _, err := io.Copy(w, resp.Body); err != nil {
-		log.Printf("error copying upstream response body: %v", err)
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("error reading upstream response body: %v", err)
+		http.Error(w, "read upstream failed", http.StatusBadGateway)
+		return
 	}
+
+	// Log the upstream response for debugging
+	log.Printf("Upstream sign-in response for timeTableId %s: %s", timeTableID, string(bodyBytes))
+
+	w.Write(bodyBytes)
 }
 
 
@@ -455,7 +458,7 @@ func handleGetCourses(w http.ResponseWriter, r *http.Request) {
 	if dateStr == "" {
 		dateStr = time.Now().Format("20060102")
 	}
-	_, statusCode, today, err := fetchCourses(sess, dateStr)
+	_, statusCode, today, delta, err := fetchCourses(sess, dateStr)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -463,7 +466,7 @@ func handleGetCourses(w http.ResponseWriter, r *http.Request) {
 
 	payload := map[string]any{
 		"STATUS": "0",
-		"delta":  0,
+		"delta":  delta,
 		"result": today.Result,
 	}
 	if len(today.Result) == 0 {
@@ -474,16 +477,19 @@ func handleGetCourses(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(payload)
 }
 
-// fetchCourses 调用上游接口并返回格式化后的 JSON 字节、状态码与结构体
-func fetchCourses(sess *Session, dateStr string) ([]byte, int, models.TodayCoursesResponse, error) {
+// fetchCourses 调用上游接口并返回格式化后的 JSON 字节、状态码、结构体和时间差
+func fetchCourses(sess *Session, dateStr string) ([]byte, int, models.TodayCoursesResponse, int64, error) {
 	target := "https://iclass.ucas.edu.cn:8181/app/course/get_stu_course_sched.action"
+	// Cache-busting parameter
+	target = fmt.Sprintf("%s?_cb=%d", target, time.Now().UnixMilli())
+
 	form := url.Values{}
 	form.Set("id", sess.UID)
 	form.Set("dateStr", dateStr)
 
 	req, err := http.NewRequest(http.MethodPost, target, bytes.NewBufferString(form.Encode()))
 	if err != nil {
-		return nil, http.StatusInternalServerError, models.TodayCoursesResponse{}, fmt.Errorf("build request failed")
+		return nil, http.StatusInternalServerError, models.TodayCoursesResponse{}, 0, fmt.Errorf("build request failed")
 	}
 	upSess := sess.UpstreamSessionID
 	if upSess == "" {
@@ -496,20 +502,29 @@ func fetchCourses(sess *Session, dateStr string) ([]byte, int, models.TodayCours
 	req.Header.Set("Connection", "keep-alive")
 	req.Header.Set("Referer", "https://servicewechat.com/wxdd3bd7d4acf54723/56/page-frame.html")
 
+	myTime := time.Now()
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, http.StatusBadGateway, models.TodayCoursesResponse{}, fmt.Errorf("upstream request failed")
+		return nil, http.StatusBadGateway, models.TodayCoursesResponse{}, 0, fmt.Errorf("upstream request failed")
 	}
 	defer resp.Body.Close()
 
+	// Calculate time delta
+	var delta int64
+	if dateHeader := resp.Header.Get("Date"); dateHeader != "" {
+		if upstreamTime, err := http.ParseTime(dateHeader); err == nil {
+			delta = upstreamTime.Unix() - myTime.Unix()
+		}
+	}
+
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, http.StatusBadGateway, models.TodayCoursesResponse{}, fmt.Errorf("read upstream failed")
+		return nil, http.StatusBadGateway, models.TodayCoursesResponse{}, 0, fmt.Errorf("read upstream failed")
 	}
 
 	var today models.TodayCoursesResponse
 	if err := json.Unmarshal(bodyBytes, &today); err != nil {
-		return bodyBytes, resp.StatusCode, today, nil
+		return bodyBytes, resp.StatusCode, today, delta, nil
 	}
 
 	if err := os.MkdirAll("data", 0755); err != nil {
@@ -521,7 +536,7 @@ func fetchCourses(sess *Session, dateStr string) ([]byte, int, models.TodayCours
 		log.Printf("write file failed: %v", err)
 	}
 
-	return pretty, resp.StatusCode, today, nil
+	return pretty, resp.StatusCode, today, delta, nil
 }
 
 // handleLogout clears current session cookie and memory record.
