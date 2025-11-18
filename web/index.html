@@ -27,15 +27,15 @@
   </head>
   <body>
     <div class="container">
-      <div id="loginForm" class="login-container">
+      <div id="loginForm" class="login-container card">
         <h2>登录</h2>
         <div class="form-group">
           <label for="student_id">学号</label>
-          <input id="student_id" type="text" placeholder="请输入学号" />
+          <input id="student_id" type="text" placeholder="请输入学号" class="input" aria-required="true" />
         </div>
         <div class="form-group">
           <label for="password">密码</label>
-          <input id="password" type="password" placeholder="请输入密码" />
+          <input id="password" type="password" placeholder="请输入密码" class="input" aria-required="true" />
         </div>
         <button id="loginButton" onclick="login()">登录</button>
         <div id="loginMessage" class="message"></div>
@@ -50,20 +50,23 @@
           </div>
         </div>
         <div id="courseMessage" class="message"></div>
-        <div id="courseList"></div>
+        <div id="courseList" class="fade-in">
+        </div>
       </div>
     </div>
 
     <div id="qrcodeOverlay" class="qrcode-overlay" onclick="closeQRCode()"></div>
-    <div id="qrcodeContainer" class="qrcode-container">
+    <div id="qrcodeContainer" class="qrcode-container fade-in">
       <div class="qrcode-title" id="qrcodeTitle">签到二维码</div>
       <div id="qrcodeRefreshInfo" class="qrcode-refresh-info"></div>
       <div id="qrcodeCanvas"></div>
       <div style="margin-top:12px;">
         <button onclick="manualRefreshQRCode(event)">刷新二维码</button>
-        <button onclick="closeQRCode()">关闭</button>
+        <button onclick="closeQRCode()" aria-label="关闭二维码弹窗">关闭</button>
       </div>
     </div>
+
+    <div id="toast" class="toast"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <script src="/web/main.js"></script>

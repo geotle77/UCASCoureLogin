@@ -50,6 +50,18 @@ function todayStr() {
 }
 
 // ========================================
+// Toast Notification
+// ========================================
+function showToast(message, type = 'info') {
+    const toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.className = `toast show ${type}`;
+    setTimeout(() => {
+        toast.className = toast.className.replace('show', '');
+    }, 3000);
+}
+
+// ========================================
 // Login & Logout
 // ========================================
 let currentUser = null;
@@ -99,10 +111,11 @@ async function login() {
         currentUser = data.user; // Store user info
         document.cookie = `user_id=${data.user.id}; path=/; max-age=86400`; // Set cookie for 1 day
         // Login successful, show course container
+        showToast('登录成功', 'success'); // 添加成功通知
         showCourseContainer();
         await fetchCourses(true);
     } catch (err) {
-        msg.textContent = '登录失败或网络异常';
+        showToast('登录失败或网络异常', 'error'); // 使用 Toast 替换 textContent
         msg.style.color = 'red';
         console.error(err);
     } finally {
@@ -112,6 +125,8 @@ async function login() {
 }
 
 async function logout() {
+    if (!confirm('确定要退出登录吗？')) return; // 添加确认对话框，提升 HCI
+
     try {
         await fetch('/logout', { method: 'POST' });
     } catch (e) {
@@ -122,6 +137,7 @@ async function logout() {
     document.getElementById("courseList").innerHTML = "";
     lastFetchTime = 0;
     showLoginForm();
+    showToast('已退出登录', 'info');
 }
 
 // ========================================
@@ -310,7 +326,7 @@ async function signCourse(timeTableId) {
             btn.disabled = false;
             btn.classList.remove("button-loading");
         }
-        msg.textContent = "网络错误，请重试";
+        showToast('签到失败，请重试', 'error'); // 使用 Toast
         msg.style.color = 'red';
         setTimeout(() => {
             msg.textContent = ""
