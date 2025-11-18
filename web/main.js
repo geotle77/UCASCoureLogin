@@ -1,4 +1,3 @@
-const timeDelta = 0;
 // ========================================
 // Constants & Helper Functions
 // ========================================
@@ -174,6 +173,9 @@ async function fetchCourses(force = false) {
         if (!res.ok) throw new Error('Failed to fetch courses');
 
         const data = await res.json();
+        if (data.delta !== undefined) {
+            timeDelta = data.delta; // 直接赋值 timeDelta
+        }
         const count = renderCourses(data.result || data.Result || []);
         if (count === 0) {
             msg.textContent = '今日暂无课程';
@@ -182,17 +184,8 @@ async function fetchCourses(force = false) {
             msg.textContent = '';
         }
     } catch (err) {
-        // Fallback to local data
-        try {
-            const local = await fetch(`/data/courses_${dateStr}.json`);
-            const data = await local.json();
-            const count = renderCourses(data.result || data.Result || []);
-            msg.textContent = count === 0 ? '本地无课程数据' : '已从本地数据加载';
-            msg.style.color = '#666';
-        } catch (e2) {
-            msg.textContent = '拉取失败';
-            msg.style.color = 'red';
-        }
+        msg.textContent = '拉取失败';
+        msg.style.color = 'red';
     }
 }
 
@@ -240,8 +233,6 @@ function createCourseCard(course) {
     } else {
         canShowQR = !!timeTableId;
     }
-    //for debug
-    disabled = false;
     if (!timeTableId) {
         btnClass += " signed";
         btnText = "缺少签到编号";
@@ -288,38 +279,28 @@ function createCourseCard(course) {
 // Sign Course
 // ========================================
 async function signCourse(timeTableId) {
-    const userId = getCookie("user_id");
     const msg = document.getElementById("courseMessage");
     const btn = document.getElementById(`sign-btn-${timeTableId}`);
-
-    if (!userId) {
-        msg.textContent = "用户ID不存在，请重新登录";
-        msg.style.color = "red";
-        return;
-    }
 
     if (btn) {
         btn.disabled = true;
         btn.classList.add("button-loading");
     }
 
-    // Construct the URL with a randomized timestamp, mimicking the provided logic
-    const timestamp = Date.now(); // Use a simple, direct timestamp
-    const targetUrl = `https://iclass.ucas.edu.cn:8181/app/course/stu_scan_sign.action?timeTableId=${timeTableId}&timestamp=${timestamp}&id=${userId}`;
-
     try {
-        // Fire-and-forget request using no-cors. We cannot see the response.
-        await fetch(targetUrl, {
-            method: "GET",
-            mode: "no-cors",
-            referrerPolicy: "no-referrer",
-            headers: {
-                "Content-Type": "application/x-www-form-urlencoded"
-            }
+        // 添加随机偏移，参考 refs
+        const timestamp = Date.now() + 1000 * timeDelta - Math.floor(2000 * Math.random() + 1000);
+        const res = await fetch('/api/sign-in', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ timeTableId, timestamp }) // 传递 timestamp 到后端
         });
 
-        // Assume success and refresh the course list after a short delay
-        // to give the backend time to process the sign-in.
+        if (!res.ok) {
+            throw new Error('Sign-in failed');
+        }
+
+        // Refresh the course list after successful sign-in
         setTimeout(() => {
             fetchCourses(true);
         }, 1000);
@@ -330,7 +311,7 @@ async function signCourse(timeTableId) {
             btn.classList.remove("button-loading");
         }
         msg.textContent = "网络错误，请重试";
-        msg.style.color = "red",
+        msg.style.color = 'red';
         setTimeout(() => {
             msg.textContent = ""
         }, 3000);
@@ -384,12 +365,12 @@ function generateQRCode() {
     if (!currentTimeTableId) return;
     if (!currentUser || !currentUser.id) {
         console.error('Cannot generate QR code without user ID');
-        // Maybe show an error message to the user in the QR code modal
         const canvas = document.getElementById("qrcodeCanvas");
         canvas.innerHTML = "<p style='color:red'>无法生成二维码，请重新登录。</p>";
         return;
     }
 
+    // 添加随机偏移，参考 refs
     const timestamp = Date.now() + 1000 * timeDelta - Math.floor(1700 * Math.random() + 300);
     const qrUrl = `${SIGN_BASE_URL}/app/course/stu_scan_sign.action?${new URLSearchParams({
         timeTableId: currentTimeTableId,

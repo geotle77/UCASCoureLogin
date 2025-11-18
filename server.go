@@ -137,36 +137,46 @@ func main() {
 }
 
 // handleSignIn proxies the sign-in request to the upstream service.
-// Request: JSON { userId: "...", timeTableId: "..." }
-// Response: (proxied from upstream)
+// Request: JSON { timeTableId: "...", timestamp: optional number }
 func handleSignIn(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
+	sess, sid, ok := getSession(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	touchSession(sid)
+
 	var body struct {
-		UserID      string `json:"userId"`
 		TimeTableID string `json:"timeTableId"`
+		Timestamp   int64  `json:"timestamp"` // 添加 timestamp
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid json body", http.StatusBadRequest)
 		return
 	}
-	userID := strings.TrimSpace(body.UserID)
 	timeTableID := strings.TrimSpace(body.TimeTableID)
-	if timeTableID == "" || userID == "" {
-		http.Error(w, "userId and timeTableId are required", http.StatusBadRequest)
+	if timeTableID == "" {
+		http.Error(w, "timeTableId is required", http.StatusBadRequest)
 		return
+	}
+
+	// 使用提供的 timestamp，如果没有则生成毫秒级
+	timestamp := body.Timestamp
+	if timestamp == 0 {
+		timestamp = time.Now().UnixMilli()
 	}
 
 	// Construct the upstream URL
 	target, _ := url.Parse("https://iclass.ucas.edu.cn:8181/app/course/stu_scan_sign.action")
 	q := target.Query()
-	q.Set("id", userID)
+	q.Set("id", sess.UID)
 	q.Set("timeTableId", timeTableID)
-	// The timestamp needs to be in milliseconds
-	q.Set("timestamp", fmt.Sprintf("%d", time.Now().UnixMilli()))
+	q.Set("timestamp", fmt.Sprintf("%d", timestamp))
 	target.RawQuery = q.Encode()
 
 	req, err := http.NewRequest(http.MethodGet, target.String(), nil)
@@ -175,11 +185,12 @@ func handleSignIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set headers similar to other requests
+	// Set headers similar to refs
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari MicroMessenger")
 	req.Header.Set("Accept", "*/*")
 	req.Header.Set("Connection", "keep-alive")
 	req.Header.Set("Referer", "https://servicewechat.com/wxdd3bd7d4acf54723/56/page-frame.html")
+	req.Header.Set("sessionId", sess.UpstreamSessionID)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -209,7 +220,6 @@ func handleSignIn(w http.ResponseWriter, r *http.Request) {
 
 	w.Write(bodyBytes)
 }
-
 
 // handleLogin proxies login to upstream, creates a local session, and returns basic user info.
 // Request: JSON { phone, password, userLevel, verificationType, verificationUrl }
@@ -406,6 +416,14 @@ func handleCoursesToday(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
+	// Calculate delta from upstream Date header
+	var delta int64
+	if dateHeader := resp.Header.Get("Date"); dateHeader != "" {
+		if upstreamTime, err := http.ParseTime(dateHeader); err == nil {
+			delta = upstreamTime.Unix() - time.Now().Unix()
+		}
+	}
+
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		http.Error(w, "read upstream failed", http.StatusBadGateway)
@@ -426,19 +444,15 @@ func handleCoursesToday(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 保存到本地 data/courses_<dateStr>.json
-	if err := os.MkdirAll("data", 0755); err != nil {
-		log.Printf("mkdir data failed: %v", err)
-	}
-	filePath := filepath.Join("data", "courses_"+dateStr+".json")
-	pretty, _ := json.MarshalIndent(today, "", "  ")
-	if err := os.WriteFile(filePath, pretty, 0644); err != nil {
-		log.Printf("write file failed: %v", err)
+	// 添加 delta 到响应
+	response := map[string]any{
+		"result": today.Result,
+		"delta":  delta,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resp.StatusCode)
-	_, _ = w.Write(pretty)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 // handleGetCourses 兼容旧版前端：GET /get_courses

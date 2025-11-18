@@ -2,3 +2,4 @@ data/
 .cache/
 .vscode/
 example.txt
+refs/
