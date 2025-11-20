@@ -1,555 +1,558 @@
-body {
-    font-family: Arial, sans-serif;
-    margin: 0;
-    background-color: #f5f5f5;
-    transition: background-color 0.3s ease; /* 添加平滑过渡 */
+:root {
+    --primary: #6366f1;
+    --primary-hover: #4f46e5;
+    --primary-light: #e0e7ff;
+    --secondary: #64748b;
+    --background: #f8fafc;
+    --surface: #ffffff;
+    --text-main: #1e293b;
+    --text-muted: #64748b;
+    --border: #e2e8f0;
+    --success: #10b981;
+    --error: #ef4444;
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+    --radius-md: 0.5rem;
+    --radius-lg: 0.75rem;
+    --radius-full: 9999px;
 }
 
 * {
     box-sizing: border-box;
+    margin: 0;
+    padding: 0;
 }
 
-.container {
-    max-width: 800px;
-    margin: 20px auto;
-    padding: 0 20px;
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: var(--background);
+    color: var(--text-main);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
 }
 
-.login-container {
-    background: white;
-    padding: 30px;
-    border-radius: 8px;
-    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+.app-wrapper {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* View Management */
+.view-container {
+    display: none;
+    width: 100%;
+    height: 100%;
+    flex: 1;
+}
+
+.view-container.active {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Login View */
+#loginView {
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: linear-gradient(135deg, #f0f9ff 0%, #e0e7ff 100%);
+}
+
+.login-card {
+    background: var(--surface);
+    padding: 2.5rem;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
     width: 100%;
     max-width: 400px;
-    margin: 40px auto;
 }
 
-.login-container h2 {
-    font-size: 1.5em;
-    margin-bottom: 20px;
+.login-header {
+    text-align: center;
+    margin-bottom: 2rem;
 }
 
-.login-container button {
-    width: 100%;
-    max-width: none;
-    margin: 10px 0 0 0;
-    padding: 12px 20px;
-    font-size: 16px;
+.logo-icon {
+    width: 48px;
+    height: 48px;
+    background: var(--primary-light);
+    color: var(--primary);
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 1rem;
 }
-.course-container {
-    display: none;
+
+.logo-icon svg {
+    width: 24px;
+    height: 24px;
 }
-.form-group {
-    margin-bottom: 20px;
+
+.login-header h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-main);
+    margin-bottom: 0.5rem;
 }
-label {
+
+.login-header p {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
+.input-group {
+    margin-bottom: 1.25rem;
+}
+
+.input-group label {
     display: block;
-    margin-bottom: 8px;
-    font-size: 14px;
+    font-size: 0.875rem;
     font-weight: 500;
-    color: #333;
-}
-input {
-    width: 100%;
-    padding: 12px 15px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    box-sizing: border-box;
-    font-size: 15px;
-    transition: border-color 0.2s ease;
+    color: var(--text-main);
+    margin-bottom: 0.5rem;
 }
 
-input:focus {
+.input-group input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    font-size: 0.95rem;
+    transition: all 0.2s;
     outline: none;
-    border-color: #4CAF50;
-    box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.1);
 }
-button {
-    padding: 10px 20px;
-    background-color: #4CAF50;
+
+.input-group input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-light);
+}
+
+/* Buttons */
+.btn-primary {
+    width: 100%;
+    padding: 0.75rem;
+    background-color: var(--primary);
     color: white;
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-md);
+    font-size: 1rem;
+    font-weight: 600;
     cursor: pointer;
-    margin: 5px;
-}
-button:hover {
-    background-color: #45a049;
-}
-button:disabled {
-    background-color: #cccccc;
-    cursor: not-allowed;
-    opacity: 0.6;
-}
-.button-loading {
+    transition: background-color 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     position: relative;
-    color: transparent !important;
 }
-.button-loading::after {
-    content: "";
-    position: absolute;
+
+.btn-primary:hover {
+    background-color: var(--primary-hover);
+}
+
+.btn-primary:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.btn-secondary {
+    padding: 0.5rem 1rem;
+    background-color: white;
+    border: 1px solid var(--border);
+    color: var(--text-main);
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-secondary:hover {
+    background-color: var(--background);
+    border-color: var(--text-muted);
+}
+
+.btn-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-md);
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.btn-icon:hover {
+    background-color: var(--background);
+    color: var(--text-main);
+}
+
+.btn-logout:hover {
+    background-color: #fef2f2;
+    color: var(--error);
+}
+
+/* Dashboard */
+.app-header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.header-content {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.header-left h2 {
+    font-size: 1.25rem;
+    font-weight: 700;
+}
+
+.date-badge {
+    background: var(--primary-light);
+    color: var(--primary);
+    padding: 0.25rem 0.75rem;
+    border-radius: var(--radius-full);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.header-right {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.course-list-container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 1.5rem 1rem;
+    width: 100%;
+}
+
+.course-grid {
+    display: grid;
+    gap: 1rem;
+}
+
+.course-card {
+    background: var(--surface);
+    border-radius: var(--radius-lg);
+    padding: 1.25rem;
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border);
+    transition: all 0.2s;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.course-card:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
+}
+
+.course-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+.course-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-main);
+    margin-bottom: 0.25rem;
+}
+
+.course-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+}
+
+.meta-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.meta-icon {
     width: 16px;
     height: 16px;
-    top: 50%;
-    left: 50%;
-    margin-left: -8px;
-    margin-top: -8px;
-    border: 2px solid #ffffff;
-    border-radius: 50%;
-    border-top-color: transparent;
-    animation: spinner 0.6s linear infinite;
+    opacity: 0.7;
 }
-@keyframes spinner {
+
+.course-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    border-top: 1px solid var(--background);
+    padding-top: 1rem;
+}
+
+.btn-sign {
+    background-color: var(--primary);
+    color: white;
+    padding: 0.5rem 1.25rem;
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-sign:hover {
+    background-color: var(--primary-hover);
+}
+
+.btn-sign.signed {
+    background-color: var(--border);
+    color: var(--text-muted);
+    cursor: not-allowed;
+}
+
+.btn-qr {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-md);
+    background-color: var(--primary-light);
+    color: var(--primary);
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-qr:hover {
+    background-color: #c7d2fe;
+}
+
+/* Modal */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.modal-overlay.active {
+    display: flex;
+    opacity: 1;
+}
+
+.modal-content {
+    background: var(--surface);
+    width: 90%;
+    max-width: 360px;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+    transform: scale(0.95);
+    transition: transform 0.2s;
+}
+
+.modal-overlay.active .modal-content {
+    transform: scale(1);
+}
+
+.modal-header {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.btn-close {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: var(--radius-md);
+}
+
+.btn-close:hover {
+    background-color: var(--background);
+}
+
+.modal-body {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.qrcode-wrapper {
+    background: white;
+    padding: 1rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    margin-bottom: 1rem;
+}
+
+.qrcode-wrapper img,
+.qrcode-wrapper canvas {
+    display: block;
+    max-width: 100%;
+}
+
+.refresh-info {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+}
+
+.modal-footer {
+    padding: 1rem;
+    background: var(--background);
+    text-align: center;
+}
+
+/* Utilities */
+.fade-in-up {
+    animation: fadeInUp 0.5s ease-out;
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: white;
+    animation: spin 0.8s linear infinite;
+    display: none;
+    position: absolute;
+}
+
+.button-loading .btn-text {
+    visibility: hidden;
+}
+
+.button-loading .spinner {
+    display: block;
+}
+
+@keyframes spin {
     to {
         transform: rotate(360deg);
     }
 }
-.message {
-    color: red;
-    margin-top: 10px;
+
+.error-message {
+    color: var(--error);
+    font-size: 0.875rem;
     text-align: center;
-}
-.course-card {
-    background: white;
-    padding: 15px;
-    margin-bottom: 15px;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
-.course-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 10px;
-    gap: 10px;
-    flex-wrap: wrap;
-}
-.course-info {
-    flex-grow: 1;
-    min-width: 200px;
-}
-.course-name {
-    font-size: 1.2em;
-    font-weight: bold;
-    margin-bottom: 5px;
-}
-.course-details {
-    color: #666;
-    font-size: 0.9em;
-}
-.header-buttons {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 20px;
-    gap: 10px;
-    flex-wrap: wrap;
+    margin-top: 1rem;
+    min-height: 1.25rem;
 }
 
-.header-buttons > div button {
-    font-size: 13px;
-    padding: 6px 14px;
-    font-weight: normal;
-}
-
-.sign-button {
-    background-color: #2196f3; /* 蓝色调柔和 */
-}
-.sign-button:hover {
-    background-color: #1976d2;
-}
-.refresh-button {
-    background-color: #66bb6a; /* 绿色调柔和 */
-}
-.refresh-button:hover {
-    background-color: #4caf50;
-}
-.signed {
-    background-color: #9e9e9e;
-    cursor: not-allowed;
-}
-.signed:hover {
-    background-color: #9e9e9e;
-}
-.qrcode-button {
-    background-color: transparent;
-    color: #1e88e5;
-    border: 2px solid #1e88e5;
-    padding: 6px 10px;
-    min-width: 40px;
-    height: 40px;
-    font-size: 0;
-    transition: all 0.2s ease;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-}
-
-.qrcode-button::before {
-    content: '';
-    display: block;
-    width: 20px;
-    height: 20px;
-    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%231e88e5"><path d="M3 11h8V3H3v8zm2-6h4v4H5V5zm8-2v8h8V3h-8zm6 6h-4V5h4v4zM3 21h8v-8H3v8zm2-6h4v4H5v-4zm13-2h-2v3h-3v2h3v3h2v-3h3v-2h-3v-3z"/></svg>');
-    background-size: contain;
-    background-repeat: no-repeat;
-    background-position: center;
-    transition: all 0.2s ease;
-}
-
-.qrcode-button:hover {
-    background-color: #1e88e5;
-    color: white;
-    transform: scale(1.05);
-}
-
-.qrcode-button:hover::before {
-    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white"><path d="M3 11h8V3H3v8zm2-6h4v4H5V5zm8-2v8h8V3h-8zm6 6h-4V5h4v4zM3 21h8v-8H3v8zm2-6h4v4H5v-4zm13-2h-2v3h-3v2h3v3h2v-3h3v-2h-3v-3z"/></svg>');
-}
-.qrcode-container {
-    display: none;
-    position: fixed;
-    inset: 0;
-    margin: auto;
-    width: 380px;
-    max-width: 92vw;
-    max-height: 92vh;
-    background: white;
-    padding: 28px 24px;
-    border-radius: 12px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-    z-index: 1000;
+.status-message {
     text-align: center;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-start;
-}
-.qrcode-container.active {
-    display: flex;
-}
-.qrcode-overlay {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0,0,0,0.5);
-    z-index: 999;
-}
-.qrcode-overlay.active {
-    display: block;
-}
-.qrcode-title {
-    font-size: 1.2em;
-    font-weight: bold;
-    margin-bottom: 10px;
-}
-.qrcode-refresh-info {
-    color: #666;
-    font-size: 0.9em;
-    margin-bottom: 15px;
-    transition: color 0.2s ease;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
 }
 
-#qrcodeCanvas {
-    margin: 12px auto;
-    transition: opacity 0.2s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 260px;
-    width: 100%;
-}
-
-#qrcodeCanvas:hover {
-    opacity: 0.8;
-}
-.course-buttons {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-}
-
-.card {
-    background: white;
-    padding: 30px;
-    border-radius: 12px; /* 增大圆角 */
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15); /* 加强阴影 */
-    transition: box-shadow 0.3s ease; /* 添加动画 */
-}
-
-.card:hover {
-    box-shadow: 0 6px 16px rgba(0,0,0,0.2);
-}
-
-.fade-in {
-    animation: fadeIn 0.5s ease-in-out; /* 添加淡入动画 */
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-/* Toast 通知样式 */
+/* Toast */
 .toast {
     position: fixed;
-    bottom: 20px;
-    right: 20px;
-    background: #333;
+    bottom: 2rem;
+    right: 2rem;
+    padding: 0.75rem 1.25rem;
+    border-radius: var(--radius-md);
     color: white;
-    padding: 12px 20px;
-    border-radius: 8px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-    opacity: 0;
-    transition: opacity 0.3s ease, transform 0.3s ease;
-    transform: translateY(20px);
-    z-index: 1001;
-    max-width: 300px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    box-shadow: var(--shadow-lg);
+    transform: translateY(100px);
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    z-index: 200;
 }
 
 .toast.show {
-    opacity: 1;
     transform: translateY(0);
 }
 
 .toast.success {
-    background: #4CAF50;
+    background-color: var(--success);
 }
 
 .toast.error {
-    background: #f44336;
+    background-color: var(--error);
 }
 
-@media (max-width: 768px) {
-    .container {
-        padding: 0 15px;
-        margin: 10px auto;
+.toast.info {
+    background-color: var(--text-main);
+}
+
+/* Mobile Responsive */
+@media (max-width: 640px) {
+    .login-card {
+        padding: 1.5rem;
     }
 
-    .login-container {
-        padding: 25px 20px;
-        margin: 30px auto;
-        max-width: 100%;
-    }
-
-    .login-container h2 {
-        font-size: 1.4em;
-    }
-
-    .course-card {
-        padding: 15px;
-    }
-
-    .course-header {
+    .course-header-row {
         flex-direction: column;
-        align-items: stretch;
+        gap: 0.5rem;
     }
 
-    .course-info {
-        min-width: 100%;
-        margin-bottom: 12px;
+    .course-actions {
+        justify-content: stretch;
     }
 
-    .course-buttons {
-        width: 100%;
-        justify-content: flex-end;
-        flex-wrap: nowrap;
-    }
-
-    .course-buttons button {
-        flex: 0 1 auto;
-        min-width: 90px;
-    }
-
-    .qrcode-button {
-        flex: 0 0 auto;
-        min-width: 44px;
-        margin-right: 8px;
-    }
-
-    .sign-button {
-        min-width: 110px;
-    }
-
-    .header-buttons {
-        flex-direction: row;
-        align-items: center;
-    }
-
-    .header-buttons h2 {
-        margin: 0;
-        text-align: left;
+    .btn-sign {
         flex: 1;
     }
 
-    .header-buttons > div {
-        display: flex;
-        gap: 8px;
-        justify-content: flex-end;
-    }
-
-    .header-buttons > div button {
-        flex: 0 1 auto;
-        min-width: 100px;
-        font-size: 13px;
-        padding: 7px 14px;
-    }
-
-    button {
-        font-size: 15px;
-        padding: 10px 20px;
-        margin: 0;
-    }
-
-    .qrcode-button {
-        height: 40px;
-        padding: 0 10px;
-    }
-
-    .qrcode-button::before {
-        width: 20px;
-        height: 20px;
-    }
-
-    .qrcode-container {
-        padding: 25px 20px;
-        width: 90%;
-    }
-
-    .qrcode-title {
-        font-size: 1.1em;
-    }
-}
-
-@media (max-width: 480px) {
-    .container {
-        padding: 0 12px;
-        margin: 8px auto;
-    }
-
-    .login-container {
-        padding: 25px 20px;
-        margin: 25px auto;
-    }
-
-    .login-container h2 {
-        font-size: 1.3em;
-        margin-bottom: 25px;
-    }
-
-    .login-container button {
-        padding: 14px 20px;
-        font-size: 16px;
-    }
-
-    .form-group {
-        margin-bottom: 18px;
-    }
-
-    .course-card {
-        padding: 12px;
-        margin-bottom: 12px;
-    }
-
-    .course-name {
-        font-size: 1.05em;
-        margin-bottom: 8px;
-    }
-
-    .course-details {
-        font-size: 0.9em;
-        line-height: 1.5;
-    }
-
-    .course-info {
-        margin-bottom: 10px;
-    }
-
-    .course-buttons {
-        width: 100%;
-        gap: 6px;
-        justify-content: flex-end;
-    }
-
-    .course-buttons button {
-        flex: 0 1 auto;
-        font-size: 14px;
-        padding: 9px 16px;
-        min-width: 85px;
-    }
-
-    .qrcode-button {
-        flex: 0 0 auto;
-        height: 38px;
-        min-width: 44px;
-        padding: 0;
-        margin-right: 4px;
-    }
-
-    .qrcode-button::before {
-        width: 18px;
-        height: 18px;
-    }
-
-    .sign-button {
-        min-width: 100px;
-    }
-
-    .header-buttons h2 {
-        font-size: 1.3em;
-        margin: 0;
-        flex: 1;
-    }
-
-    .header-buttons > div {
-        gap: 8px;
-        justify-content: flex-end;
-        flex-wrap: wrap;
-    }
-
-    .header-buttons > div button {
-        flex: 0 1 auto;
-        font-size: 12px;
-        padding: 6px 12px;
-        min-width: 90px;
-    }
-
-    .qrcode-container {
-        padding: 20px 15px;
-        width: 92%;
-    }
-
-    .qrcode-title {
-        font-size: 1.05em;
-        margin-bottom: 12px;
-    }
-
-    .qrcode-refresh-info {
-        font-size: 0.85em;
-        margin-bottom: 12px;
-    }
-
-    #qrcodeCanvas {
-        width: 100%;
-        max-width: 280px;
-        margin: 0 auto;
-    }
-
-#qrcodeCanvas img,
-#qrcodeCanvas canvas {
-    width: 260px !important;
-    height: 260px !important;
-    max-width: 100%;
-    max-height: 100%;
-}
-
-    .message {
-        font-size: 0.9em;
-        margin-top: 12px;
+    .toast {
+        left: 1rem;
+        right: 1rem;
+        bottom: 1rem;
+        text-align: center;
     }
 }

@@ -1,74 +1,116 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>课程签到 Demo</title>
-    <link rel="stylesheet" href="/web/main.css" />
-    <style>
-      body { font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 24px; }
-      .course-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; }
-      .qrcode-button { width: 40px; height: 40px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 8px; cursor: pointer; }
-      .sign-button { padding: 8px 12px; background: #2563eb; color: #fff; border-radius: 6px; border: none; cursor: pointer; }
-      .sign-button.signed { background: #94a3b8; cursor: not-allowed; }
-      .button-loading { opacity: .7; }
-      #courseMessage { margin: 8px 0; min-height: 20px; }
 
-      /* overlay */
-      #qrcodeOverlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: none; z-index: 99; }
-      #qrcodeOverlay.active { display: block; }
-      #qrcodeContainer { position: fixed; inset: 0; margin: auto; width: 360px; height: fit-content; background: #fff; border-radius: 10px; padding: 16px; display: none; z-index: 100; }
-      #qrcodeContainer.active { display: block; }
-      #qrcodeCanvas { display: flex; align-items: center; justify-content: center; min-height: 260px; }
-      .row { margin-bottom: 12px; }
-      input, button { font-size: 14px; }
-      .input { padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; }
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <div id="loginForm" class="login-container card">
-        <h2>登录</h2>
-        <div class="form-group">
-          <label for="student_id">学号</label>
-          <input id="student_id" type="text" placeholder="请输入学号" class="input" aria-required="true" />
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>课程签到助手</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/web/main.css">
+</head>
+
+<body>
+  <div class="app-wrapper">
+    <!-- Login View -->
+    <div id="loginView" class="view-container active">
+      <div class="login-card fade-in-up">
+        <div class="login-header">
+          <div class="logo-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+              <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+            </svg>
+          </div>
+          <h1>欢迎回来</h1>
+          <p>请登录以继续签到</p>
         </div>
-        <div class="form-group">
-          <label for="password">密码</label>
-          <input id="password" type="password" placeholder="请输入密码" class="input" aria-required="true" />
-        </div>
-        <button id="loginButton" onclick="login()">登录</button>
-        <div id="loginMessage" class="message"></div>
+        <form id="loginForm" onsubmit="event.preventDefault(); login();">
+          <div class="input-group">
+            <label for="student_id">学号</label>
+            <input type="text" id="student_id" placeholder="请输入您的学号" required autocomplete="username">
+          </div>
+          <div class="input-group">
+            <label for="password">密码</label>
+            <input type="password" id="password" placeholder="请输入您的密码" required autocomplete="current-password">
+          </div>
+          <button type="submit" id="loginButton" class="btn-primary">
+            <span class="btn-text">登 录</span>
+            <div class="spinner"></div>
+          </button>
+        </form>
+        <div id="loginMessage" class="error-message"></div>
       </div>
+    </div>
 
-      <div id="courseContainer" class="course-container container">
-        <div class="header-buttons">
-          <h2>今日课程</h2>
-          <div>
-            <button class="refresh-button" onclick="fetchCourses(true)">刷新</button>
-            <button onclick="logout()">退出登录</button>
+    <!-- Dashboard View -->
+    <div id="dashboardView" class="view-container">
+      <header class="app-header">
+        <div class="header-content">
+          <div class="header-left">
+            <h2>今日课程</h2>
+            <span class="date-badge" id="currentDate">2023-10-27</span>
+          </div>
+          <div class="header-right">
+            <button class="btn-icon" onclick="fetchCourses(true)" title="刷新课程">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M23 4v6h-6"></path>
+                <path d="M1 20v-6h6"></path>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+              </svg>
+            </button>
+            <button class="btn-icon btn-logout" onclick="logout()" title="退出登录">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                <polyline points="16 17 21 12 16 7"></polyline>
+                <line x1="21" y1="12" x2="9" y2="12"></line>
+              </svg>
+            </button>
           </div>
         </div>
-        <div id="courseMessage" class="message"></div>
-        <div id="courseList" class="fade-in">
+      </header>
+
+      <main class="course-list-container">
+        <div id="courseMessage" class="status-message"></div>
+        <div id="courseList" class="course-grid">
+          <!-- Course cards will be injected here -->
         </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- QR Code Modal -->
+  <div id="qrcodeModal" class="modal-overlay" onclick="if(event.target === this) closeQRCode()">
+    <div class="modal-content fade-in-scale">
+      <div class="modal-header">
+        <h3 id="qrcodeTitle">签到二维码</h3>
+        <button class="btn-close" onclick="closeQRCode()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div id="qrcodeCanvas" class="qrcode-wrapper"></div>
+        <p id="qrcodeRefreshInfo" class="refresh-info">正在生成...</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="manualRefreshQRCode()">刷新二维码</button>
       </div>
     </div>
+  </div>
 
-    <div id="qrcodeOverlay" class="qrcode-overlay" onclick="closeQRCode()"></div>
-    <div id="qrcodeContainer" class="qrcode-container fade-in">
-      <div class="qrcode-title" id="qrcodeTitle">签到二维码</div>
-      <div id="qrcodeRefreshInfo" class="qrcode-refresh-info"></div>
-      <div id="qrcodeCanvas"></div>
-      <div style="margin-top:12px;">
-        <button onclick="manualRefreshQRCode(event)">刷新二维码</button>
-        <button onclick="closeQRCode()" aria-label="关闭二维码弹窗">关闭</button>
-      </div>
-    </div>
+  <!-- Toast Notification -->
+  <div id="toast" class="toast"></div>
 
-    <div id="toast" class="toast"></div>
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+  <script src="/web/main.js"></script>
+</body>
 
-    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-    <script src="/web/main.js"></script>
-  </body>
-  </html>
+</html>
