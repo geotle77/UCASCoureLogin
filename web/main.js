@@ -318,7 +318,12 @@ async function signCourse(timeTableId) {
         const res = await fetch('/api/sign-in', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ timeTableId, timestamp })
+            body: JSON.stringify({
+                timeTableId,
+                timestamp,
+                longitude: 116.63176727294922,
+                latitude: 40.316001892089844,
+            })
         });
 
         if (!res.ok) {

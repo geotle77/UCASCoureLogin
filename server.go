@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -55,6 +56,10 @@ const (
 	cookieName = "sid"
 	// Session TTL
 	sessionTTL = 24 * time.Hour
+	// Default geo coordinates used by sign-in when client doesn't provide one.
+	// Backend appears to ignore the actual values, so any in-range coords work.
+	defaultSignLongitude = 116.63176727294922
+	defaultSignLatitude  = 40.316001892089844
 )
 
 // genToken generates a cryptographically-secure random session token.
@@ -152,8 +157,10 @@ func handleSignIn(w http.ResponseWriter, r *http.Request) {
 	touchSession(sid)
 
 	var body struct {
-		TimeTableID string `json:"timeTableId"`
-		Timestamp   int64  `json:"timestamp"` // 添加 timestamp
+		TimeTableID string  `json:"timeTableId"`
+		Timestamp   int64   `json:"timestamp"`
+		Longitude   float64 `json:"longitude"`
+		Latitude    float64 `json:"latitude"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid json body", http.StatusBadRequest)
@@ -165,31 +172,40 @@ func handleSignIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 使用提供的 timestamp，如果没有则生成毫秒级
 	timestamp := body.Timestamp
 	if timestamp == 0 {
 		timestamp = time.Now().UnixMilli()
 	}
 
-	// Construct the upstream URL
+	longitude := body.Longitude
+	latitude := body.Latitude
+	if longitude == 0 && latitude == 0 {
+		longitude = defaultSignLongitude
+		latitude = defaultSignLatitude
+	}
+
 	target, _ := url.Parse("https://iclass.ucas.edu.cn:8181/app/course/stu_scan_sign.action")
 	q := target.Query()
-	q.Set("id", sess.UID)
 	q.Set("timeTableId", timeTableID)
 	q.Set("timestamp", fmt.Sprintf("%d", timestamp))
 	target.RawQuery = q.Encode()
 
-	req, err := http.NewRequest(http.MethodGet, target.String(), nil)
+	form := url.Values{}
+	form.Set("id", sess.UID)
+	form.Set("longitude", strconv.FormatFloat(longitude, 'f', -1, 64))
+	form.Set("latitude", strconv.FormatFloat(latitude, 'f', -1, 64))
+
+	req, err := http.NewRequest(http.MethodPost, target.String(), bytes.NewBufferString(form.Encode()))
 	if err != nil {
 		http.Error(w, "build request failed", http.StatusInternalServerError)
 		return
 	}
 
-	// Set headers similar to refs
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari MicroMessenger")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781")
 	req.Header.Set("Accept", "*/*")
 	req.Header.Set("Connection", "keep-alive")
-	req.Header.Set("Referer", "https://servicewechat.com/wxdd3bd7d4acf54723/56/page-frame.html")
+	req.Header.Set("Referer", "https://servicewechat.com/wxdd3bd7d4acf54723/57/page-frame.html")
 	req.Header.Set("sessionId", sess.UpstreamSessionID)
 
 	resp, err := http.DefaultClient.Do(req)
